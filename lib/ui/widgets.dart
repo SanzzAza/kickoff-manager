@@ -24,8 +24,14 @@ class CrestWidget extends StatelessWidget {
     }
   }
 
+  String _slug(String name) => name
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
+      .replaceAll(RegExp(r'^_+|_+$'), '');
+
   @override
   Widget build(BuildContext context) {
+    final slug = _slug(nombre);
     final initials = nombre
         .split(RegExp(r'[\s-]+'))
         .where((w) => w.isNotEmpty)
@@ -33,6 +39,19 @@ class CrestWidget extends StatelessWidget {
         .map((w) => w[0])
         .join()
         .toUpperCase();
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(size * 0.25),
+      child: Image.asset(
+        'assets/clubs/$slug.png',
+        width: size,
+        height: size,
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) => _fallbackCrest(initials),
+      ),
+    );
+  }
+
+  Widget _fallbackCrest(String initials) {
     return Container(
       width: size,
       height: size,
