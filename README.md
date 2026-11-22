@@ -1,5 +1,9 @@
 # Kickoff Manager — game manajer sepak bola (Flutter + SQLite)
 
+[![Build APK](https://github.com/SanzzAza/kickoff-manager/actions/workflows/build-apk.yml/badge.svg)](https://github.com/SanzzAza/kickoff-manager/actions/workflows/build-apk.yml)
+[![Download APK](https://img.shields.io/badge/Download-APK%20terbaru-00C853)](https://github.com/SanzzAza/kickoff-manager/releases/latest)
+
+
 Game manajer sepak bola offline untuk Android, **dibuat dengan Flutter/Dart + SQLite** —
 persis seperti game referensi (`Superkickoff`) yang menjadi acuan alur dan mekaniknya.
 Bukan HTML, bukan webview: aplikasi Android native.
