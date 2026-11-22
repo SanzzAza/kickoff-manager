@@ -316,53 +316,58 @@ class _NewGameScreenState extends State<NewGameScreen> {
                   }),
                 ),
                 const SizedBox(height: 12),
-                const Text('Warna Kulit & Jas',
+                const Text('Warna Kulit',
                     style: TextStyle(fontSize: 11.5, color: AppColors.muted)),
                 const SizedBox(height: 8),
-                Row(
-                  children: [
-                    ...List.generate(ManagerAvatar.skinTones.length, (i) {
-                      final sel = _profile.skinTone == i;
-                      return GestureDetector(
-                        onTap: () => setState(
-                            () => _profile = _profile.copyWith(skinTone: i)),
-                        child: Container(
-                          margin: const EdgeInsets.only(right: 8),
-                          width: 26,
-                          height: 26,
-                          decoration: BoxDecoration(
-                            color: ManagerAvatar.skinTones[i],
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: sel ? AppColors.primary : Colors.white24,
-                              width: sel ? 2.5 : 1,
-                            ),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 8,
+                  children: List.generate(ManagerAvatar.skinTones.length, (i) {
+                    final sel = _profile.skinTone == i;
+                    return GestureDetector(
+                      onTap: () => setState(
+                          () => _profile = _profile.copyWith(skinTone: i)),
+                      child: Container(
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: ManagerAvatar.skinTones[i],
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: sel ? AppColors.primary : Colors.white24,
+                            width: sel ? 2.5 : 1,
                           ),
                         ),
-                      );
-                    }),
-                    const Spacer(),
-                    ...List.generate(ManagerAvatar.suitColors.length, (i) {
-                      final sel = _profile.suitColor == i;
-                      return GestureDetector(
-                        onTap: () => setState(
-                            () => _profile = _profile.copyWith(suitColor: i)),
-                        child: Container(
-                          margin: const EdgeInsets.only(left: 6),
-                          width: 22,
-                          height: 22,
-                          decoration: BoxDecoration(
-                            color: ManagerAvatar.suitColors[i],
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                              color: sel ? AppColors.accent : Colors.white24,
-                              width: sel ? 2.2 : 1,
-                            ),
+                      ),
+                    );
+                  }),
+                ),
+                const SizedBox(height: 12),
+                const Text('Warna Busana / Jas',
+                    style: TextStyle(fontSize: 11.5, color: AppColors.muted)),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 8,
+                  children: List.generate(ManagerAvatar.suitColors.length, (i) {
+                    final sel = _profile.suitColor == i;
+                    return GestureDetector(
+                      onTap: () => setState(
+                          () => _profile = _profile.copyWith(suitColor: i)),
+                      child: Container(
+                        width: 26,
+                        height: 26,
+                        decoration: BoxDecoration(
+                          color: ManagerAvatar.suitColors[i],
+                          borderRadius: BorderRadius.circular(7),
+                          border: Border.all(
+                            color: sel ? AppColors.accent : Colors.white24,
+                            width: sel ? 2.2 : 1,
                           ),
                         ),
-                      );
-                    }),
-                  ],
+                      ),
+                    );
+                  }),
                 ),
                 const SizedBox(height: 12),
                 Row(

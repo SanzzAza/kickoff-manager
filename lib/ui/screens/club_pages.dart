@@ -753,20 +753,24 @@ class SeasonEndScreen extends StatelessWidget {
                   )),
             ],
             const SizedBox(height: 20),
-            ElevatedButton(
-              key: const Key('next_season_btn'),
-              onPressed: () async {
-                await service.nextSeason();
-                if (context.mounted) Navigator.pop(context);
-              },
-              style: ElevatedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(52)),
-              child: Text(info['sacked'] == true
-                  ? 'LANJUTKAN KARIER'
-                  : 'MULAI MUSIM BARU'),
-            ),
-            const SizedBox(height: 8),
           ],
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 14),
+          child: ElevatedButton(
+            key: const Key('next_season_btn'),
+            onPressed: () async {
+              await service.nextSeason();
+              if (context.mounted) Navigator.pop(context);
+            },
+            style: ElevatedButton.styleFrom(
+                minimumSize: const Size.fromHeight(52)),
+            child: Text(info['sacked'] == true
+                ? 'LANJUTKAN KARIER'
+                : 'MULAI MUSIM BARU'),
+          ),
         ),
       ),
     );
