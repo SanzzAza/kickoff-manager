@@ -1,0 +1,564 @@
+import 'package:flutter/material.dart';
+import '../../engine/game_service.dart';
+import '../../models/models.dart';
+import '../theme.dart';
+import '../widgets.dart';
+
+// ---------------- LATIHAN ----------------
+
+class TrainingScreen extends StatefulWidget {
+  final GameService service;
+  const TrainingScreen({super.key, required this.service});
+  @override
+  State<TrainingScreen> createState() => _TrainingScreenState();
+}
+
+class _TrainingScreenState extends State<TrainingScreen> {
+  int program = 0;
+  bool loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.service.state().then((st) {
+      if (!mounted) return;
+      setState(() {
+        program = st.i('training');
+        loaded = true;
+      });
+    });
+  }
+
+  static const _programs = [
+    ['Seimbang', 'Semua atribut bergerak perlahan tapi merata'],
+    ['Fisik', 'Prioritas fisik & kecepatan'],
+    ['Teknis', 'Prioritas dribel & passing'],
+    ['Taktik', 'Prioritas bertahan & penyelesaian'],
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    if (!loaded) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    return Scaffold(
+      appBar: AppBar(title: const Text('Latihan')),
+      body: ListView(
+        padding: const EdgeInsets.all(14),
+        children: [
+          const Text('Program latihan mingguan',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 6),
+          const Text(
+              'Setiap pekan pemain muda berpeluang naik atribut. Pemain cedera '
+              'tidak ikut latihan.',
+              style: TextStyle(fontSize: 12, color: AppColors.muted)),
+          const SizedBox(height: 14),
+          ..._programs.asMap().entries.map((e) {
+            final sel = program == e.key;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: InkWell(
+                onTap: () async {
+                  setState(() => program = e.key);
+                  await widget.service.setTraining(e.key);
+                },
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: sel
+                        ? AppColors.primaryDark.withOpacity(0.22)
+                        : AppColors.surface,
+                    border: Border.all(
+                        color: sel ? AppColors.primary : AppColors.line),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                          [Icons.tune, Icons.fitness_center, Icons.sports_soccer,
+                                  Icons.psychology][e.key],
+                          color: sel ? AppColors.primary : AppColors.muted,
+                          size: 20),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(e.value[0],
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w800, fontSize: 13.5)),
+                            Text(e.value[1],
+                                style: const TextStyle(
+                                    fontSize: 11.5, color: AppColors.muted)),
+                          ],
+                        ),
+                      ),
+                      if (sel)
+                        const Icon(Icons.check_circle,
+                            color: AppColors.primary, size: 18),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------- STADION ----------------
+
+class StadiumScreen extends StatefulWidget {
+  final GameService service;
+  const StadiumScreen({super.key, required this.service});
+  @override
+  State<StadiumScreen> createState() => _StadiumScreenState();
+}
+
+class _StadiumScreenState extends State<StadiumScreen> {
+  Stadium? stadium;
+  Team? team;
+  bool busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final t = await widget.service.userTeam();
+    final s = await widget.service.world.stadium(t.estaid);
+    if (!mounted) return;
+    setState(() {
+      team = t;
+      stadium = s;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (stadium == null) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    final s = stadium!;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Stadion')),
+      body: ListView(
+        padding: const EdgeInsets.all(14),
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  const Icon(Icons.stadium, size: 44, color: AppColors.primary),
+                  const SizedBox(height: 8),
+                  Text(s.nombre,
+                      style: const TextStyle(
+                          fontSize: 17, fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 4),
+                  Text('Kapasitas ${s.capacity} / maks ${s.maxCapacity}',
+                      style: const TextStyle(
+                          fontSize: 12, color: AppColors.muted)),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      _statSq('General', s.general, s.maxGeneral),
+                      _statSq('Plateas', s.plateas, s.maxPlateas),
+                      _statSq('Tribunas', s.tribunas, s.maxTribunas),
+                      _statSq('Palcos', s.palcos, s.maxPalcos),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          SectionTitle('Harga tiket: ${s.precio} / kursi'),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 14),
+            child: Text(
+                'Tiket mahal = pemasukan lebih besar tapi penonton berkurang.',
+                style: TextStyle(fontSize: 11, color: AppColors.muted)),
+          ),
+          SectionTitle('Ekspansi tribun'),
+          ...['general', 'plateas', 'tribunas', 'palcos'].map((sector) {
+            final cur = {
+              'general': s.general,
+              'plateas': s.plateas,
+              'tribunas': s.tribunas,
+              'palcos': s.palcos
+            }[sector]!;
+            final max = {
+              'general': s.maxGeneral,
+              'plateas': s.maxPlateas,
+              'tribunas': s.maxTribunas,
+              'palcos': s.maxPalcos
+            }[sector]!;
+            final full = cur >= max;
+            return ListTile(
+              dense: true,
+              title: Text('$sector  ($cur/$max)',
+                  style: const TextStyle(fontSize: 13)),
+              subtitle: Text(
+                  full ? 'Sudah maksimum' : 'Tambah 1000 kursi',
+                  style: const TextStyle(fontSize: 11, color: AppColors.muted)),
+              trailing: FilledButton(
+                onPressed: busy || full
+                    ? null
+                    : () async {
+                        setState(() => busy = true);
+                        final msg = await widget.service
+                            .expandStadium(sector, 1000);
+                        setState(() => busy = false);
+                        await _load();
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(SnackBar(content: Text(msg)));
+                      },
+                child: const Text('Bangun'),
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _statSq(String label, int cur, int max) => Expanded(
+        child: Column(
+          children: [
+            Text('$cur',
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
+            Text(label,
+                style: const TextStyle(fontSize: 9.5, color: AppColors.muted)),
+            const SizedBox(height: 4),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: LinearProgressIndicator(
+                value: max == 0 ? 0 : cur / max,
+                minHeight: 4,
+                backgroundColor: AppColors.surface2,
+                valueColor: const AlwaysStoppedAnimation(AppColors.primary),
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
+// ---------------- FINANSIAL ----------------
+
+class FinanceScreen extends StatefulWidget {
+  final GameService service;
+  const FinanceScreen({super.key, required this.service});
+  @override
+  State<FinanceScreen> createState() => _FinanceScreenState();
+}
+
+class _FinanceScreenState extends State<FinanceScreen> {
+  Map<String, dynamic>? data;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final team = await widget.service.userTeam();
+    final squad = await widget.service.world.squad(team.equid);
+    final stadium = await widget.service.world.stadium(team.estaid);
+    final fixtures = await widget.service.userFixtures();
+    final incomes = fixtures
+        .where((f) => (f['par_status'] as int? ?? 0) == 1)
+        .fold<int>(0, (a, f) => a + ((f['par_ent_ingresos'] as int?) ?? 0));
+    final wages = squad.fold<int>(0, (a, p) => a + p.salario);
+    if (!mounted) return;
+    setState(() => data = {
+          'team': team,
+          'wages': wages,
+          'stadium': stadium,
+          'income': incomes,
+          'maintenance': (stadium.capacity * 2.1).round(),
+        });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (data == null) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    final team = data!['team'] as Team;
+    final wages = data!['wages'] as int;
+    final income = data!['income'] as int;
+    final maint = data!['maintenance'] as int;
+    final sponsors = (team.poder * 420000).round();
+    return Scaffold(
+      appBar: AppBar(title: const Text('Finansial')),
+      body: ListView(
+        padding: const EdgeInsets.all(14),
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  const Text('SALDO KAS',
+                      style: TextStyle(
+                          fontSize: 10,
+                          letterSpacing: 1.2,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.muted)),
+                  const SizedBox(height: 6),
+                  Text(formatMoney(team.presupuesto),
+                      style: TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.w900,
+                          color: team.presupuesto < 0
+                              ? AppColors.danger
+                              : AppColors.primary)),
+                ],
+              ),
+            ),
+          ),
+          SectionTitle('Arus kas musim ini'),
+          _line('Pendapatan tiket & TV', income, true),
+          _line('Sponsor utama', sponsors, true),
+          _line('Total gaji pemain', -wages, false),
+          _line('Operasional stadion', -maint * (income > 0 ? 10 : 0), false),
+          const Divider(),
+          _line('Prakiraan bersih',
+              income + sponsors - wages - maint * (income > 0 ? 10 : 0), true,
+              bold: true),
+          SectionTitle('Catatan'),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 14),
+            child: Text(
+                'Pendapatan tiket dihitung dari kehadiran penonton tiap laga kandang. '
+                'Gaji dipotong setiap pekan. Sponsor mengikuti popularitas klub.',
+                style: TextStyle(fontSize: 11.5, color: AppColors.muted, height: 1.4)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _line(String label, int v, bool positive, {bool bold = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+      child: Row(
+        children: [
+          Expanded(
+              child: Text(label,
+                  style: TextStyle(
+                      fontSize: bold ? 13.5 : 12.5,
+                      fontWeight: bold ? FontWeight.w800 : FontWeight.w400))),
+          Text(formatMoney(v),
+              style: TextStyle(
+                  fontSize: bold ? 14 : 12.5,
+                  fontWeight: FontWeight.w800,
+                  color: v < 0 ? AppColors.danger : AppColors.primary)),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------- SEJARAH ----------------
+
+class HistoryScreen extends StatefulWidget {
+  final GameService service;
+  const HistoryScreen({super.key, required this.service});
+  @override
+  State<HistoryScreen> createState() => _HistoryScreenState();
+}
+
+class _HistoryScreenState extends State<HistoryScreen> {
+  List<Map<String, dynamic>>? rows;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final r = await widget.service.world.history();
+    if (!mounted) return;
+    setState(() => rows = r);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Sejarah Klub')),
+      body: rows == null
+          ? const Center(child: CircularProgressIndicator())
+          : rows!.isEmpty
+              ? const EmptyState(
+                  icon: Icons.emoji_events,
+                  text: 'Belum ada musim yang selesai.\nSelesaikan musim pertamamu!')
+              : ListView.builder(
+                  padding: const EdgeInsets.only(bottom: 20),
+                  itemCount: rows!.length,
+                  itemBuilder: (context, i) {
+                    final r = rows![i];
+                    final juara = (r['hist_user_pos'] as int? ?? 0) == 1;
+                    return Card(
+                      margin: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 6),
+                      child: ListTile(
+                        leading: Icon(
+                            juara ? Icons.emoji_events : Icons.calendar_today,
+                            color: juara ? AppColors.gold : AppColors.muted),
+                        title: Text(
+                            'Musim ${r['hist_anio']}/${(r['hist_anio'] as int) + 1}',
+                            style: const TextStyle(
+                                fontSize: 13.5, fontWeight: FontWeight.w700)),
+                        subtitle: Text(
+                            'Juara: ${r['hist_campeon_nombre']} · '
+                            'Kamu: posisi ${r['hist_user_pos']}',
+                            style: const TextStyle(
+                                fontSize: 11.5, color: AppColors.muted)),
+                        trailing: Text('${r['hist_user_pts']} pts',
+                            style: const TextStyle(
+                                fontSize: 12, fontWeight: FontWeight.w800)),
+                      ),
+                    );
+                  },
+                ),
+    );
+  }
+}
+
+// ---------------- AKHIR MUSIM ----------------
+
+class SeasonEndScreen extends StatelessWidget {
+  final GameService service;
+  final Map<String, dynamic> info;
+  const SeasonEndScreen(
+      {super.key, required this.service, required this.info});
+  @override
+  Widget build(BuildContext context) {
+    final championUser = info['championUser'] as bool;
+    return Scaffold(
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            children: [
+              const Spacer(),
+              Icon(championUser ? Icons.emoji_events : Icons.sports_soccer,
+                  size: 74,
+                  color: championUser ? AppColors.gold : AppColors.primary),
+              const SizedBox(height: 18),
+              Text(
+                  championUser
+                      ? 'JUARA ${(info['year'] as int)}/${(info['year'] as int) + 1}'
+                      : 'MUSIM SELESAI',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w900,
+                      color: championUser ? AppColors.gold : AppColors.text)),
+              const SizedBox(height: 8),
+              Text('Juara liga: ${info['champion']}',
+                  style: const TextStyle(fontSize: 13, color: AppColors.muted)),
+              const SizedBox(height: 20),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      _row('Posisi akhir', '${info['userPos']}'),
+                      const Divider(),
+                      _row('Pencetak gol terbanyak',
+                          '${info['scorer']} (${info['scorerGoals']})'),
+                      const Divider(),
+                      _row('Hadiah liga', formatMoney(info['prize'] as int)),
+                    ],
+                  ),
+                ),
+              ),
+              if (info['sacked'] == true)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                      color: AppColors.danger.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                          color: AppColors.danger.withOpacity(0.5))),
+                  child: const Text(
+                      'Direksi kehilangan kepercayaan dan memutus kontrakmu. '
+                      'Kamu harus mencari klub baru.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 12, color: AppColors.danger)),
+                ),
+              if ((info['offers'] as List).isNotEmpty) ...[
+                const SizedBox(height: 12),
+                const Text('LAMARAN KLUB LAIN',
+                    style: TextStyle(
+                        fontSize: 10,
+                        letterSpacing: 1,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.muted)),
+                const SizedBox(height: 6),
+                ...(info['offers'] as List).map((o) => Card(
+                      child: ListTile(
+                        dense: true,
+                        title: Text(o['nombre'] as String,
+                            style: const TextStyle(fontSize: 13)),
+                        subtitle: Text('Kekuatan ${o['poder']}',
+                            style: const TextStyle(
+                                fontSize: 11, color: AppColors.muted)),
+                        trailing: TextButton(
+                          onPressed: () async {
+                            await service.acceptJob(o['equid'] as int);
+                            await service.nextSeason();
+                            if (context.mounted) Navigator.pop(context);
+                          },
+                          child: const Text('Terima'),
+                        ),
+                      ),
+                    )),
+              ],
+              const Spacer(),
+              ElevatedButton(
+                onPressed: () async {
+                  await service.nextSeason();
+                  if (context.mounted) Navigator.pop(context);
+                },
+                style: ElevatedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(52)),
+                child: Text(info['sacked'] == true
+                    ? 'LANJUTKAN KARIER'
+                    : 'MULAI MUSIM BARU'),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _row(String k, String v) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          children: [
+            Expanded(
+                child: Text(k,
+                    style:
+                        const TextStyle(fontSize: 12, color: AppColors.muted))),
+            Text(v,
+                style: const TextStyle(
+                    fontSize: 13, fontWeight: FontWeight.w800)),
+          ],
+        ),
+      );
+}
