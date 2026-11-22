@@ -114,6 +114,7 @@ void main() {
     await settle(t);
     expect(find.text('TUTUP MUSIM'), findsOneWidget);
     await t.ensureVisible(find.text('TUTUP MUSIM'));
+    await t.pump();
     await t.tap(find.text('TUTUP MUSIM'));
     final nextBtn = find.byKey(const Key('next_season_btn'));
     for (var i = 0; i < 20 && nextBtn.evaluate().isEmpty; i++) {

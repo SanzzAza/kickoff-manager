@@ -187,7 +187,7 @@ class _ClubScreenState extends State<ClubScreen> {
           children: [
             Container(
               margin: const EdgeInsets.fromLTRB(14, 4, 14, 0),
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
                   colors: [Color(0xFF0E3B27), Color(0xFF12271E)],
@@ -203,7 +203,7 @@ class _ClubScreenState extends State<ClubScreen> {
                     children: [
                       CrestWidget(
                           nombre: team.nombre,
-                          size: 56,
+                          size: 52,
                           colorA: team.colorA,
                           colorB: team.colorB),
                       const SizedBox(width: 12),
@@ -213,12 +213,12 @@ class _ClubScreenState extends State<ClubScreen> {
                           children: [
                             Text(team.nombre,
                                 style: const TextStyle(
-                                    fontSize: 19, fontWeight: FontWeight.w900)),
+                                    fontSize: 18, fontWeight: FontWeight.w900)),
                             const SizedBox(height: 2),
                             Text('${st['league']} · Musim $season/${season + 1}',
                                 style: const TextStyle(
                                     color: AppColors.muted, fontSize: 12)),
-                            const SizedBox(height: 6),
+                            const SizedBox(height: 5),
                             Row(
                               children: [
                                 PowerBadge(team.poder),
@@ -243,7 +243,7 @@ class _ClubScreenState extends State<ClubScreen> {
                       ),
                       Column(
                         children: [
-                          ManagerAvatar(profile: profile, size: 46),
+                          ManagerAvatar(profile: profile, size: 44),
                           const SizedBox(height: 3),
                           Text(profile.trait.badge,
                               style: const TextStyle(
@@ -254,7 +254,7 @@ class _ClubScreenState extends State<ClubScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 11),
                   Row(
                     children: [
                       _money('Kas klub', team.presupuesto),
@@ -264,7 +264,7 @@ class _ClubScreenState extends State<ClubScreen> {
                       _stat('Pekan', '$week/$totalWeeks'),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
                   Row(
                     children: [
                       _barMini(
@@ -278,6 +278,37 @@ class _ClubScreenState extends State<ClubScreen> {
                 ],
               ),
             ),
+            if (finished)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: AppColors.accent.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppColors.accent.withOpacity(0.4)),
+                  ),
+                  child: Column(
+                    children: [
+                      const Text('MUSIM SELESAI',
+                          style: TextStyle(
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1,
+                              color: AppColors.accent)),
+                      const SizedBox(height: 6),
+                      const Text(
+                          'Semua pertandingan sudah dimainkan. Tutup musim untuk '
+                          'mendapat hadiah, promosi, dan pemain menua.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontSize: 12, color: AppColors.muted)),
+                      const SizedBox(height: 10),
+                      ElevatedButton(
+                          onPressed: _endSeason,
+                          child: const Text('TUTUP MUSIM')),
+                    ],
+                  ),
+                ),
+              ),
             if (superCup != null)
               Padding(
                 padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
@@ -313,38 +344,6 @@ class _ClubScreenState extends State<ClubScreen> {
             if (next != null) _nextMatchCard(next, team),
             if (data!['offer'] != null)
               _incomingOfferCard(data!['offer'] as Map<String, dynamic>),
-
-            if (finished)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
-                child: Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: AppColors.accent.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: AppColors.accent.withOpacity(0.4)),
-                  ),
-                  child: Column(
-                    children: [
-                      const Text('MUSIM SELESAI',
-                          style: TextStyle(
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 1,
-                              color: AppColors.accent)),
-                      const SizedBox(height: 6),
-                      const Text(
-                          'Semua pertandingan sudah dimainkan. Tutup musim untuk '
-                          'mendapat hadiah, promosi, dan pemain menua.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: 12, color: AppColors.muted)),
-                      const SizedBox(height: 10),
-                      ElevatedButton(
-                          onPressed: _endSeason,
-                          child: const Text('TUTUP MUSIM')),
-                    ],
-                  ),
-                ),
-              ),
 
             SectionTitle('Pusat manajemen'),
             Padding(
