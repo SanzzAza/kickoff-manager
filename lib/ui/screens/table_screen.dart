@@ -112,56 +112,61 @@ class _TableScreenState extends State<TableScreen> with SingleTickerProviderStat
           ...t.asMap().entries.map((e) {
             final r = e.value;
             final isUser = r.equid == userEquid;
-            return Container(
-              color: isUser ? AppColors.primaryDark.withOpacity(0.22) : null,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 22,
-                    child: Text('${e.key + 1}',
-                        style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
-                            color: e.key < 4
-                                ? AppColors.primary
-                                : e.key > t.length - 4
-                                    ? AppColors.danger
-                                    : AppColors.muted)),
-                  ),
-                  SizedBox(
-                      width: 34,
-                      child: Center(
-                          child: CrestWidget(
-                              nombre: r.nombre,
-                              colorA: r.colorA,
-                              colorB: r.colorB,
-                              size: 22))),
-                  Expanded(
-                    child: Text(r.nombre,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: isUser ? FontWeight.w800 : FontWeight.w500)),
-                  ),
-                  SizedBox(
-                      width: 26,
-                      child: Text('${r.pj}',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(fontSize: 12))),
-                  SizedBox(
-                      width: 26,
-                      child: Text(r.dg > 0 ? '+${r.dg}' : '${r.dg}',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(fontSize: 12))),
-                  SizedBox(
-                      width: 30,
-                      child: Text('${r.pts}',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                              fontSize: 13, fontWeight: FontWeight.w800))),
-                ],
+            return InkWell(
+              onTap: () => _showClubSheet(r),
+              child: Container(
+                color: isUser ? AppColors.primaryDark.withOpacity(0.22) : null,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 22,
+                      child: Text('${e.key + 1}',
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: e.key < 4
+                                  ? AppColors.primary
+                                  : e.key > t.length - 4
+                                      ? AppColors.danger
+                                      : AppColors.muted)),
+                    ),
+                    SizedBox(
+                        width: 34,
+                        child: Center(
+                            child: CrestWidget(
+                                nombre: r.nombre,
+                                colorA: r.colorA,
+                                colorB: r.colorB,
+                                size: 22))),
+                    Expanded(
+                      child: Text(r.nombre,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight:
+                                  isUser ? FontWeight.w800 : FontWeight.w500)),
+                    ),
+                    SizedBox(
+                        width: 26,
+                        child: Text('${r.pj}',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontSize: 12))),
+                    SizedBox(
+                        width: 26,
+                        child: Text(r.dg > 0 ? '+${r.dg}' : '${r.dg}',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontSize: 12))),
+                    SizedBox(
+                        width: 30,
+                        child: Text('${r.pts}',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                                fontSize: 13, fontWeight: FontWeight.w800))),
+                  ],
+                ),
               ),
             );
           }),
@@ -221,6 +226,7 @@ class _TableScreenState extends State<TableScreen> with SingleTickerProviderStat
           itemBuilder: (context, i) {
             final f = list[i];
             final isHome = f['par_equid_local'] == userEquid;
+            final isCup = (f['par_vuelta'] as int? ?? 0) == 1;
             final played = (f['par_status'] as int? ?? 0) == 1;
             return FutureBuilder(
               future: widget.service.world
@@ -230,10 +236,13 @@ class _TableScreenState extends State<TableScreen> with SingleTickerProviderStat
                 return ListTile(
                   dense: true,
                   leading: SizedBox(
-                      width: 34,
-                      child: Text('J${f['par_jornada']}',
-                          style: const TextStyle(
-                              fontSize: 11, color: AppColors.muted))),
+                      width: 38,
+                      child: Text(
+                          isCup ? 'PIALA' : 'J${f['par_jornada']}',
+                          style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: isCup ? FontWeight.w800 : FontWeight.w500,
+                              color: isCup ? AppColors.gold : AppColors.muted))),
                   title: Text(
                       rival == null
                           ? '...'
@@ -252,6 +261,84 @@ class _TableScreenState extends State<TableScreen> with SingleTickerProviderStat
           },
         );
       },
+    );
+  }
+
+  Future<void> _showClubSheet(StandingsRow r) async {
+    final t = await widget.service.world.team(r.equid);
+    final squad = await widget.service.world.squad(r.equid);
+    squad.sort((a, b) => b.poder - a.poder);
+    final top = squad.take(6).toList();
+    if (!mounted) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CrestWidget(
+                    nombre: r.nombre,
+                    colorA: r.colorA,
+                    colorB: r.colorB,
+                    size: 44),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(r.nombre,
+                          style: const TextStyle(
+                              fontSize: 17, fontWeight: FontWeight.w900)),
+                      Text(
+                          'Poin ${r.pts} · ${r.pg}M ${r.pe}S ${r.pp}K · SG ${r.dg > 0 ? "+${r.dg}" : r.dg}',
+                          style: const TextStyle(
+                              fontSize: 11.5, color: AppColors.muted)),
+                    ],
+                  ),
+                ),
+                if (t != null) PowerBadge(t.poder),
+              ],
+            ),
+            const SizedBox(height: 12),
+            const Text('Pemain Kunci',
+                style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.muted)),
+            const SizedBox(height: 6),
+            ...top.map((p) => Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 32,
+                        child: Text(Squads.positionName(p.posid),
+                            style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                color: Squads.positionColor(p.posid))),
+                      ),
+                      Expanded(
+                          child: Text(p.nombre,
+                              style: const TextStyle(fontSize: 13))),
+                      Text('${p.edad} th',
+                          style: const TextStyle(
+                              fontSize: 11, color: AppColors.muted)),
+                      const SizedBox(width: 10),
+                      PowerBadge(p.poder),
+                    ],
+                  ),
+                )),
+          ],
+        ),
+      ),
     );
   }
 }

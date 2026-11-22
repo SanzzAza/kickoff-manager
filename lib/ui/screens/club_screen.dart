@@ -56,6 +56,7 @@ class _ClubScreenState extends State<ClubScreen> {
     final unread = await widget.service.unread();
     final squad = await widget.service.world.squad(team.equid);
     final wages = squad.fold<int>(0, (a, p) => a + p.salario);
+    final offer = await widget.service.pendingOffer();
     if (!mounted) return;
     setState(() {
       data = {
@@ -68,6 +69,7 @@ class _ClubScreenState extends State<ClubScreen> {
         'unread': unread,
         'wages': wages,
         'squad': squad.length,
+        'offer': offer,
       };
     });
   }
@@ -245,6 +247,8 @@ class _ClubScreenState extends State<ClubScreen> {
               ),
             ),
             if (next != null) _nextMatchCard(next, team),
+            if (data!['offer'] != null)
+              _incomingOfferCard(data!['offer'] as Map<String, dynamic>),
 
             if (finished)
               Padding(
@@ -421,8 +425,75 @@ class _ClubScreenState extends State<ClubScreen> {
     );
   }
 
+  Widget _incomingOfferCard(Map<String, dynamic> offer) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.accent.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.accent.withOpacity(0.55)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.local_offer, size: 15, color: AppColors.accent),
+              const SizedBox(width: 6),
+              const Text('TAWARAN MASUK',
+                  style: TextStyle(
+                      fontSize: 10,
+                      letterSpacing: 1,
+                      fontWeight: FontWeight.w900,
+                      color: AppColors.accent)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '${offer['buyer_name']} menawar ${offer['player_name']} '
+            '(OVR ${offer['player_poder']}) seharga ${formatMoney(offer['amount'] as int)}',
+            style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () async {
+                    final msg = await widget.service.respondIncomingOffer(false);
+                    await _load();
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context)
+                        .showSnackBar(SnackBar(content: Text(msg)));
+                  },
+                  child: const Text('Tolak'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton(
+                  onPressed: () async {
+                    final msg = await widget.service.respondIncomingOffer(true);
+                    await _load();
+                    widget.onDataChanged?.call();
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context)
+                        .showSnackBar(SnackBar(content: Text(msg)));
+                  },
+                  child: const Text('Terima'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _nextMatchCard(Map<String, dynamic> next, Team team) {
     final isHome = next['par_equid_local'] == team.equid;
+    final isCup = (next['par_vuelta'] as int? ?? 0) == 1;
     final rivalId = isHome ? next['par_equid_visita'] : next['par_equid_local'];
     return FutureBuilder(
       future: widget.service.world.team(rivalId as int),
@@ -434,7 +505,8 @@ class _ClubScreenState extends State<ClubScreen> {
           decoration: BoxDecoration(
             color: AppColors.surface,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: AppColors.line),
+            border: Border.all(
+                color: isCup ? AppColors.gold.withOpacity(0.5) : AppColors.line),
           ),
           child: Row(
             children: [
@@ -442,12 +514,12 @@ class _ClubScreenState extends State<ClubScreen> {
                 child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('LAGA BERIKUTNYA',
+                  Text(isCup ? 'PIALA DOMESTIK' : 'LAGA BERIKUTNYA',
                       style: TextStyle(
                           fontSize: 9,
                           letterSpacing: 1,
                           fontWeight: FontWeight.w800,
-                          color: AppColors.muted)),
+                          color: isCup ? AppColors.gold : AppColors.muted)),
                   const SizedBox(height: 6),
                   Text(
                       rival == null

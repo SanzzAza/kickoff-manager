@@ -12,6 +12,7 @@ class SoundService {
 
   AudioPlayer? _whistlePlayer;
   AudioPlayer? _crowdPlayer;
+  AudioPlayer? _ambiencePlayer;
 
   bool get _isTestEnv {
     if (kIsWeb) return false;
@@ -36,6 +37,23 @@ class SoundService {
     }
   }
 
+  Future<void> startAmbience() async {
+    if (!enabled || _isTestEnv) return;
+    try {
+      final p = _ambiencePlayer ??= AudioPlayer()
+        ..setReleaseMode(ReleaseMode.loop);
+      await p.setVolume(0.24);
+      await p.play(AssetSource('audio/crowd_ambience.wav'));
+    } catch (_) {}
+  }
+
+  Future<void> stopAmbience() async {
+    if (_isTestEnv) return;
+    try {
+      await _ambiencePlayer?.stop();
+    } catch (_) {}
+  }
+
   Future<void> playKickoff() => _play('audio/whistle_kickoff.wav', volume: 0.85);
   Future<void> playFulltime() => _play('audio/whistle_fulltime.wav', volume: 0.9);
   Future<void> playFoul() => _play('audio/whistle_foul.wav', volume: 0.75);
@@ -48,6 +66,7 @@ class SoundService {
     try {
       await _whistlePlayer?.stop();
       await _crowdPlayer?.stop();
+      await _ambiencePlayer?.stop();
     } catch (_) {}
   }
 }

@@ -1,15 +1,15 @@
-// Engine pertandingan: simulasi menit-per-menit.
+// Engine pertandingan: simulasi menit-per-menit (mendukung mode live interaktif).
 // Terinspirasi struktur AlgPartido.dart pada game aslinya:
-// tiap menit dihitung peluang, lalu diselesaikan jadi tembakan/gol/penyelamatan,
-// plus kartu, cedera, dan rating pemain.
+// tiap menit dihitung peluang, stamina, momentum, substitusi, perubahan taktik,
+// lalu diselesaikan jadi tembakan/gol/penyelamatan/kartu/cedera/rating pemain.
 
 import 'dart:math';
 import '../models/models.dart';
 
 class TeamSetup {
-  final List<Player> xi; // 11 pemain
+  final List<Player> xi; // 11 pemain aktif di lapangan
   final List<Player> bench;
-  final Tactics tactics;
+  Tactics tactics;
   final int clubPower;
   final String name;
   TeamSetup({
@@ -64,13 +64,100 @@ class TeamSetup {
   List<Player> get outfield => xi.where((p) => p.posid != 1).toList();
 }
 
-class MatchEngine {
+const List<String> _goalPhrases = [
+  'melesakkan bola ke sudut kanan gawang',
+  'menyelesaikan serangan balik dengan dingin',
+  'menembak keras dari tepi kotak penalti',
+  'menyundul bola hasil umpan silang',
+  'melewati bek lalu menaklukkan kiper',
+  'memanfaatkan kesalahan lini belakang',
+  'melesat dari sisi kiri lalu menembak silang',
+  'mengecoh kiper dengan tembakan rendah',
+  'melepaskan tendangan voli spektakuler yang tak terbendung',
+  'menyambar bola muntah di depan gawang',
+];
+
+const List<String> _assistPhrases = [
+  'berhasil mengirim umpan terukur',
+  'memberi umpan matang dari sisi lapangan',
+  'melakukan kombinasi satu-dua apik dengan',
+  'mengirim bola silang mematikan kepada',
+  'mencuri bola lalu melepas assist kepada',
+];
+
+class LiveMatchSession {
+  final TeamSetup home;
+  final TeamSetup away;
+  final int userSide; // 0 = home, 1 = away, -1 = netral
+  final bool needWinner;
+  final bool homeAdvantage;
   final Random rng;
-  MatchEngine([Random? r]) : rng = r ?? Random();
+
+  int minute = 0;
+  late final int totalMinutes;
+  int homeGoals = 0;
+  int awayGoals = 0;
+  int homeShots = 0;
+  int awayShots = 0;
+  int homeOnTarget = 0;
+  int awayOnTarget = 0;
+  double homeTilt = 0; // -0.35 .. +0.35
+  int userSubsUsed = 0;
+  int aiSubsUsed = 0;
+  static const int maxSubs = 5;
+
+  final List<MatchEvent> events = [];
+  final Map<int, PlayerMatchStat> stats = {};
+  final Map<int, double> stamina = {};
+  final Set<int> subbedInIds = {};
+  final List<int> injuriesHome = [];
+  final List<int> injuriesAway = [];
+  final List<int> suspendedHome = [];
+  final List<int> suspendedAway = [];
+
+  int _posSampleSum = 0;
+  int _posSampleCount = 0;
+  MatchResult? _finalized;
+
+  LiveMatchSession({
+    required this.home,
+    required this.away,
+    this.userSide = 0,
+    this.needWinner = false,
+    this.homeAdvantage = true,
+    Random? rng,
+  }) : rng = rng ?? Random() {
+    totalMinutes = 90 + this.rng.nextInt(5) + 1;
+    for (final p in home.xi) {
+      stats[p.jugid] = PlayerMatchStat(p.jugid, 0);
+      stamina[p.jugid] = p.condicion.toDouble();
+    }
+    for (final p in away.xi) {
+      stats[p.jugid] = PlayerMatchStat(p.jugid, 1);
+      stamina[p.jugid] = p.condicion.toDouble();
+    }
+  }
+
+  bool get isFinished => minute >= totalMinutes;
+
+  int get currentPossessionHome {
+    if (_posSampleCount == 0) return 50;
+    return (_posSampleSum / _posSampleCount).round().clamp(25, 75);
+  }
+
+  /// Nilai momentum 0.0 (dominasi tandang) .. 1.0 (dominasi kandang)
+  double get momentumRatio => ((homeTilt + 0.35) / 0.70).clamp(0.05, 0.95);
+
+  TeamSetup? get userSetup =>
+      userSide == 0 ? home : (userSide == 1 ? away : null);
 
   double _gauss(double mean, double sd) {
-    final u = rng.nextDouble() + rng.nextDouble() + rng.nextDouble() +
-        rng.nextDouble() + rng.nextDouble() + rng.nextDouble();
+    final u = rng.nextDouble() +
+        rng.nextDouble() +
+        rng.nextDouble() +
+        rng.nextDouble() +
+        rng.nextDouble() +
+        rng.nextDouble();
     return mean + (u - 3) * sd;
   }
 
@@ -90,234 +177,322 @@ class MatchEngine {
     return pool.last;
   }
 
-  static const List<String> _goalPhrases = [
-    'melesakkan bola ke sudut kanan gawang',
-    'menyelesaikan serangan balik dengan dingin',
-    'menembak keras dari tepi kotak penalti',
-    'menyundul bola hasil umpan silang',
-    'melewati bek lalu menaklukkan kiper',
-    'memanfaatkan kesalahan lini belakang',
-    'melesat dari sisi kiri lalu menembak silang',
-    'mengecoh kiper dengan tembakan rendah',
-  ];
+  double _teamPressure(TeamSetup t) {
+    switch (t.tactics.presion) {
+      case Pressure.alta:
+        return 1.35;
+      case Pressure.baja:
+        return 0.72;
+      default:
+        return 1.0;
+    }
+  }
 
-  static const List<String> _assistPhrases = [
-    'berhasil mengirim umpan terukur',
-    'memberi umpan matang dari sisi lapangan',
-    'melakukan kombinasi satu-dua apik dengan',
-    'mengirim bola silang mematikan kepada',
-    'mencuri bola lalu melepas assist kepada',
-  ];
+  double _fatigueFactor(TeamSetup t) {
+    if (t.xi.isEmpty) return 1.0;
+    final avgStam = t.xi
+            .map((p) => stamina[p.jugid] ?? p.condicion.toDouble())
+            .reduce((a, b) => a + b) /
+        t.xi.length;
+    if (avgStam >= 65) return 1.0;
+    return (0.82 + (avgStam / 65) * 0.18).clamp(0.75, 1.0);
+  }
 
-  MatchResult simulate(
-    TeamSetup home,
-    TeamSetup away, {
-    bool needWinner = false,
-    bool homeAdvantage = true,
-  }) {
-    final events = <MatchEvent>[];
-    final stats = <int, PlayerMatchStat>{};
-    for (final p in [...home.xi, ...away.xi]) {
-      stats[p.jugid] = PlayerMatchStat(p.jugid, home.xi.contains(p) ? 0 : 1);
+  void updateUserTactics(Tactics newTac) {
+    final u = userSetup;
+    if (u == null) return;
+    u.tactics = newTac.copy();
+  }
+
+  MatchEvent? substituteUser(int outPlayerId, int inPlayerId) {
+    final u = userSetup;
+    if (u == null || userSubsUsed >= maxSubs) return null;
+    final outIdx = u.xi.indexWhere((p) => p.jugid == outPlayerId);
+    final inIdx = u.bench.indexWhere((p) => p.jugid == inPlayerId);
+    if (outIdx < 0 || inIdx < 0) return null;
+
+    final outP = u.xi[outIdx];
+    final inP = u.bench.removeAt(inIdx);
+    u.xi[outIdx] = inP;
+    userSubsUsed++;
+    subbedInIds.add(inP.jugid);
+    stats[inP.jugid] = PlayerMatchStat(inP.jugid, userSide);
+    stamina[inP.jugid] = inP.condicion.toDouble();
+    stats[outP.jugid]?.minutos = max(1, minute);
+
+    final ev = MatchEvent(
+      minute,
+      'cambio',
+      userSide,
+      inP.jugid,
+      'Pergantian ${u.name}: ${inP.nombre} masuk menggantikan ${outP.nombre}.',
+    );
+    events.add(ev);
+    return ev;
+  }
+
+  void _maybeAiSub(int side) {
+    final t = side == 0 ? home : away;
+    if (side == userSide || aiSubsUsed >= 3 || t.bench.isEmpty) return;
+    if (minute < 58 || minute > 84 || rng.nextDouble() > 0.14) return;
+    final candidates = t.outfield
+        .where((p) => (stamina[p.jugid] ?? 100) < 70 || (stats[p.jugid]?.amarillas ?? 0) >= 1)
+        .toList();
+    if (candidates.isEmpty) return;
+    final outP = candidates[rng.nextInt(candidates.length)];
+    final role = outP.posid <= 4 ? 2 : outP.posid <= 8 ? 3 : 4;
+    final inIdx = t.bench.indexWhere((b) =>
+        b.posid != 1 && ((b.posid <= 4 ? 2 : b.posid <= 8 ? 3 : 4) == role));
+    final pickIdx = inIdx >= 0 ? inIdx : t.bench.indexWhere((b) => b.posid != 1);
+    if (pickIdx < 0) return;
+
+    final outIdx = t.xi.indexOf(outP);
+    if (outIdx < 0) return;
+    final inP = t.bench.removeAt(pickIdx);
+    t.xi[outIdx] = inP;
+    aiSubsUsed++;
+    subbedInIds.add(inP.jugid);
+    stats[inP.jugid] = PlayerMatchStat(inP.jugid, side);
+    stamina[inP.jugid] = inP.condicion.toDouble();
+    stats[outP.jugid]?.minutos = max(1, minute);
+    events.add(MatchEvent(
+      minute,
+      'cambio',
+      side,
+      inP.jugid,
+      'Pergantian ${t.name}: ${inP.nombre} menggantikan ${outP.nombre}.',
+    ));
+  }
+
+  List<MatchEvent> stepMinute() {
+    if (isFinished) return const [];
+    minute++;
+    final newEvents = <MatchEvent>[];
+
+    // Update stamina tiap pemain aktif di lapangan
+    for (final sideTeam in [home, away]) {
+      final pressMult = sideTeam.tactics.presion == Pressure.alta
+          ? 1.35
+          : sideTeam.tactics.presion == Pressure.baja
+              ? 0.78
+              : 1.0;
+      for (final p in sideTeam.xi) {
+        final fisMult = 1.18 - (p.fisik / 220);
+        final drain = (p.posid == 1 ? 0.08 : 0.42) * pressMult * fisMult;
+        stamina[p.jugid] = ((stamina[p.jugid] ?? 100.0) - drain).clamp(15.0, 100.0);
+        final st = stats[p.jugid];
+        if (st != null) st.minutos++;
+      }
     }
 
-    var homeGoals = 0;
-    var awayGoals = 0;
-    var homeShots = 0, awayShots = 0, homeOnTarget = 0, awayOnTarget = 0;
+    _maybeAiSub(0);
+    _maybeAiSub(1);
 
-    final homeAttack = home.attackRating + (homeAdvantage ? 3 : 0);
-    final awayAttack = away.attackRating;
+    final homeAttack = (home.attackRating * _fatigueFactor(home)).round() +
+        (homeAdvantage ? 3 : 0);
+    final awayAttack = (away.attackRating * _fatigueFactor(away)).round();
     final homeMid = home.midfieldRating + (homeAdvantage ? 2 : 0);
     final awayMid = away.midfieldRating;
-    final homeDef = home.defenseRating + (homeAdvantage ? 2 : 0);
-    final awayDef = away.defenseRating;
+    final homeDef = (home.defenseRating * _fatigueFactor(home)).round() +
+        (homeAdvantage ? 2 : 0);
+    final awayDef = (away.defenseRating * _fatigueFactor(away)).round();
 
-    // Penguasaan bola berdasar lini tengah + gaya main
-    var possessionBase =
-        (55 + (homeMid - awayMid) * 0.55).clamp(28.0, 72.0).toDouble();
-    if (home.tactics.estilo == Style.posesion) possessionBase += 4;
-    if (away.tactics.estilo == Style.posesion) possessionBase -= 4;
-    final homePossession = possessionBase.round().clamp(25, 75);
+    var posBase = (55 + (homeMid - awayMid) * 0.55).clamp(28.0, 72.0).toDouble();
+    if (home.tactics.estilo == Style.posesion) posBase += 4;
+    if (away.tactics.estilo == Style.posesion) posBase -= 4;
+    _posSampleSum += posBase.round();
+    _posSampleCount++;
 
-    // Peluang dasar: total tembakan rata-rata ~12 per tim
     final homeChanceRate =
         (0.125 * pow(1.26, (homeAttack - awayDef) / 18)).clamp(0.045, 0.34);
     final awayChanceRate =
         (0.104 * pow(1.26, (awayAttack - homeDef) / 18)).clamp(0.035, 0.32);
 
-    double homeTilt = 0;
-    final injuriesHome = <int>[];
-    final injuriesAway = <int>[];
-    final suspendedHome = <int>[];
-    final suspendedAway = <int>[];
+    homeTilt = (homeTilt + _gauss(0, 0.11)).clamp(-0.35, 0.35);
 
-    final totalMinutes = 90 + rng.nextInt(5) + 1;
+    for (var side = 0; side < 2; side++) {
+      final isHome = side == 0;
+      final atk = isHome ? home : away;
+      final dfn = isHome ? away : home;
+      if (atk.xi.isEmpty || dfn.xi.isEmpty) continue;
+      var rate = isHome ? homeChanceRate : awayChanceRate;
+      rate *= (1 + (isHome ? homeTilt : -homeTilt));
+      if (minute > 75) {
+        rate *= atk.tactics.mentalidad == Mentality.ofensivo ? 1.20 : 1.08;
+      }
 
-    for (var minute = 1; minute <= totalMinutes; minute++) {
-      // momentum berjalan: mempengaruhi peluang sedikit
-      homeTilt = (homeTilt + _gauss(0, 0.11)).clamp(-0.35, 0.35);
+      if (rng.nextDouble() > rate) continue;
 
-      for (var side = 0; side < 2; side++) {
-        final isHome = side == 0;
-        final atk = isHome ? home : away;
-        final dfn = isHome ? away : home;
-        // bila salah satu tim tanpa pemain (banyak kartu merah), lewati
-        if (atk.xi.isEmpty || dfn.xi.isEmpty) continue;
-        var rate = isHome ? homeChanceRate : awayChanceRate;
-        rate *= (1 + (isHome ? homeTilt : -homeTilt));
-        if (minute > 75) {
-          // menit akhir lebih terbuka
-          rate *= atk.tactics.mentalidad == Mentality.ofensivo ? 1.18 : 1.08;
-        }
+      final attackers = atk.outfield;
+      if (attackers.isEmpty) continue;
+      final shooter = _pickWeighted(
+          attackers,
+          (p) =>
+              (p.posid >= 9 ? 3.4 : p.posid >= 5 ? 1.5 : 0.7) *
+              (0.5 + p.poder / 100) *
+              (0.75 + (stamina[p.jugid] ?? 100) / 400));
+      final mates = attackers.where((p) => p.jugid != shooter.jugid).toList();
+      final assister = mates.isEmpty
+          ? null
+          : _pickWeighted(mates, (p) => p.posid >= 5 ? 2.2 : 0.8);
 
-        if (rng.nextDouble() > rate) continue;
+      if (isHome) {
+        homeShots++;
+      } else {
+        awayShots++;
+      }
+      stats[shooter.jugid]?.tiros++;
 
-        final attackers = atk.outfield;
-        if (attackers.isEmpty) continue;
-        final shooter = _pickWeighted(
-            attackers,
-            (p) => p.posid == 1
-                ? 0.2
-                : (p.posid >= 9 ? 3.4 : p.posid >= 5 ? 1.5 : 0.7) *
-                    (0.5 + p.poder / 100));
-        final mates =
-            attackers.where((p) => p.jugid != shooter.jugid).toList();
-        final assister = mates.isEmpty
-            ? null
-            : _pickWeighted(mates, (p) => p.posid >= 5 ? 2.2 : 0.8);
+      final gk = dfn.xi.firstWhere((p) => p.posid == 1, orElse: () => dfn.xi.first);
+      final quality =
+          shooter.ataque + (atk.attackRating - dfn.defenseRating) * 0.55;
+      final roll = rng.nextDouble() * 100 + _gauss(0, 7);
+      final onTargetChance =
+          (0.44 + (quality - gk.kiper) / 260).clamp(0.24, 0.76);
+      final onTarget = rng.nextDouble() < onTargetChance;
 
-        if (isHome) {
-          homeShots++;
-        } else {
-          awayShots++;
-        }
-        stats[shooter.jugid]!.tiros++;
-
-        final gk = dfn.xi.firstWhere((p) => p.posid == 1,
-            orElse: () => dfn.xi.first);
-        final quality = shooter.ataque + (atk.attackRating - dfn.defenseRating) * 0.55;
-        final roll = rng.nextDouble() * 100 + _gauss(0, 7);
-        final onTargetChance =
-            (0.44 + (quality - gk.kiper) / 260).clamp(0.24, 0.76);
-        final onTarget = rng.nextDouble() < onTargetChance;
-
-        if (!onTarget) {
-          if (rng.nextDouble() < 0.16) {
-            events.add(MatchEvent(
+      if (!onTarget) {
+        final ev = rng.nextDouble() < 0.16
+            ? MatchEvent(
                 minute,
                 'palo',
                 side,
                 shooter.jugid,
-                '${shooter.nombre} menyambar bola, tapi hanya membentur mistar!'));
-          } else {
-            events.add(MatchEvent(
+                '${shooter.nombre} menyambar bola, tapi hanya membentur mistar!')
+            : MatchEvent(
                 minute,
                 'fuera_juego',
                 side,
                 shooter.jugid,
-                'Tembakan ${shooter.nombre} melebar tipis dari gawang.'));
-          }
-          stats[shooter.jugid]!.rating += 0.03;
-          continue;
-        }
-
-        if (isHome) {
-          homeOnTarget++;
-        } else {
-          awayOnTarget++;
-        }
-
-        final goalChance =
-            (0.275 + (quality - (dfn.defenseRating + gk.kiper) / 2) / 240)
-                .clamp(0.08, 0.52);
-        if (roll < goalChance * 100) {
-          if (isHome) {
-            homeGoals++;
-          } else {
-            awayGoals++;
-          }
-          stats[shooter.jugid]!.goles++;
-          stats[shooter.jugid]!.rating += 1.0;
-          if (assister != null) {
-            stats[assister.jugid]!.asistencias++;
-            stats[assister.jugid]!.rating += 0.45;
-          }
-          final phrase = _goalPhrases[rng.nextInt(_goalPhrases.length)];
-          final assistPhrase = _assistPhrases[rng.nextInt(_assistPhrases.length)];
-          final assistText = assister == null
-              ? ''
-              : ', memanfaatkan aksi ${assister.nombre} yang $assistPhrase';
-          events.add(MatchEvent(
-            minute,
-            'gol',
-            side,
-            shooter.jugid,
-            'GOL! ${shooter.nombre} $phrase$assistText. '
-                '${isHome ? homeGoals : awayGoals}-${isHome ? awayGoals : homeGoals}',
-          ));
-        } else {
-          stats[gk.jugid]!.atajadas++;
-          stats[gk.jugid]!.rating += 0.28;
-          events.add(MatchEvent(
-              minute,
-              'atajada',
-              side,
-              shooter.jugid,
-              'Peluang emas! ${shooter.nombre} menembak, tapi ${gk.nombre} '
-                  'melakukan penyelamatan hebat.'));
-        }
+                'Tembakan ${shooter.nombre} melebar tipis dari gawang.');
+        events.add(ev);
+        newEvents.add(ev);
+        stats[shooter.jugid]?.rating += 0.03;
+        continue;
       }
 
-      // Pelanggaran, kartu, cedera, penalti
-      final foulP =
-          0.135 * (atk_teamPressure(home) + atk_teamPressure(away)) / 2;
-      if (rng.nextDouble() < foulP) {
-        final isHomeFoul = rng.nextBool();
-        final fTeam = isHomeFoul ? home : away;
-        final oTeam = isHomeFoul ? away : home;
-        final sideno = isHomeFoul ? 0 : 1;
-        // bila tim sudah habis pemain, tidak ada pelanggaran
-        if (fTeam.xi.isEmpty || oTeam.xi.isEmpty) continue;
+      if (isHome) {
+        homeOnTarget++;
+      } else {
+        awayOnTarget++;
+      }
+
+      final goalChance =
+          (0.275 + (quality - (dfn.defenseRating + gk.kiper) / 2) / 240)
+              .clamp(0.08, 0.52);
+      if (roll < goalChance * 100) {
+        if (isHome) {
+          homeGoals++;
+          homeTilt = (homeTilt + 0.12).clamp(-0.35, 0.35);
+        } else {
+          awayGoals++;
+          homeTilt = (homeTilt - 0.12).clamp(-0.35, 0.35);
+        }
+        stats[shooter.jugid]?.goles++;
+        stats[shooter.jugid]?.rating += 1.0;
+        if (assister != null) {
+          stats[assister.jugid]?.asistencias++;
+          stats[assister.jugid]?.rating += 0.45;
+        }
+        final phrase = _goalPhrases[rng.nextInt(_goalPhrases.length)];
+        final assistPhrase = _assistPhrases[rng.nextInt(_assistPhrases.length)];
+        final assistText = assister == null
+            ? ''
+            : ', memanfaatkan aksi ${assister.nombre} yang $assistPhrase';
+        final drama = minute >= 88 ? ' MENIT KRUSIAL!' : '';
+        final ev = MatchEvent(
+          minute,
+          'gol',
+          side,
+          shooter.jugid,
+          'GOL!$drama ${shooter.nombre} $phrase$assistText. '
+              '${isHome ? homeGoals : awayGoals}-${isHome ? awayGoals : homeGoals}',
+        );
+        events.add(ev);
+        newEvents.add(ev);
+      } else {
+        stats[gk.jugid]?.atajadas++;
+        stats[gk.jugid]?.rating += 0.28;
+        final ev = MatchEvent(
+            minute,
+            'atajada',
+            side,
+            shooter.jugid,
+            'Peluang emas! ${shooter.nombre} menembak, tapi ${gk.nombre} '
+                'melakukan penyelamatan hebat.');
+        events.add(ev);
+        newEvents.add(ev);
+      }
+    }
+
+    // Pelanggaran, kartu, penalti
+    final foulP = 0.135 * (_teamPressure(home) + _teamPressure(away)) / 2;
+    if (rng.nextDouble() < foulP) {
+      final isHomeFoul = rng.nextBool();
+      final fTeam = isHomeFoul ? home : away;
+      final oTeam = isHomeFoul ? away : home;
+      final sideno = isHomeFoul ? 0 : 1;
+      if (fTeam.xi.isNotEmpty && oTeam.xi.isNotEmpty) {
         final offender = _pickWeighted(
             fTeam.def_players.isEmpty ? fTeam.xi : fTeam.def_players,
             (p) => p.defensivo / 100 + 0.2,
             fallback: fTeam.xi.first);
-        stats[offender.jugid]!.faltas++;
+        stats[offender.jugid]?.faltas++;
 
         if (rng.nextDouble() < 0.030) {
-          // penalti
-          final taker = _pickWeighted(oTeam.outfield,
-              (p) => p.tembakan.toDouble(),
+          final taker = _pickWeighted(
+              oTeam.outfield, (p) => p.tembakan.toDouble(),
               fallback: oTeam.xi.first);
-          final gk = fTeam.xi.firstWhere((p) => p.posid == 1, orElse: () => fTeam.xi.first);
+          final gk = fTeam.xi.firstWhere((p) => p.posid == 1,
+              orElse: () => fTeam.xi.first);
           final scored = rng.nextDouble() < 0.76;
-          events.add(MatchEvent(minute, 'penalti_keputusan', sideno, taker.jugid,
-              'PENALTI! ${offender.nombre} melakukan pelanggaran di kotak. Wasit menunjuk titik putih.'));
+          final evPen = MatchEvent(
+              minute,
+              'penalti_keputusan',
+              sideno,
+              taker.jugid,
+              'PENALTI! ${offender.nombre} melakukan pelanggaran di kotak. Wasit menunjuk titik putih.');
+          events.add(evPen);
+          newEvents.add(evPen);
           if (scored) {
             if (isHomeFoul) {
               awayGoals++;
             } else {
               homeGoals++;
             }
-            stats[taker.jugid]!.goles++;
-            stats[taker.jugid]!.rating += 1.0;
-            events.add(MatchEvent(minute, 'penalti_gol', sideno, taker.jugid,
+            stats[taker.jugid]?.goles++;
+            stats[taker.jugid]?.rating += 1.0;
+            final evG = MatchEvent(
+                minute,
+                'penalti_gol',
+                isHomeFoul ? 1 : 0,
+                taker.jugid,
                 '${taker.nombre} mengeksekusi penalti dengan sempurna! Skor jadi '
-                '${isHomeFoul ? awayGoals : homeGoals}-${isHomeFoul ? homeGoals : awayGoals}'));
+                '${isHomeFoul ? awayGoals : homeGoals}-${isHomeFoul ? homeGoals : awayGoals}');
+            events.add(evG);
+            newEvents.add(evG);
           } else {
-            stats[taker.jugid]!.rating -= 0.35;
-            stats[gk.jugid]!.atajadas++;
-            stats[gk.jugid]!.rating += 0.6;
-            events.add(MatchEvent(minute, 'penalti_fallado', sideno, taker.jugid,
-                '${taker.nombre} gagal! ${gk.nombre} menebak arah dan menahan penalti!'));
+            stats[taker.jugid]?.rating -= 0.35;
+            stats[gk.jugid]?.atajadas++;
+            stats[gk.jugid]?.rating += 0.6;
+            final evM = MatchEvent(
+                minute,
+                'penalti_fallado',
+                sideno,
+                taker.jugid,
+                '${taker.nombre} gagal! ${gk.nombre} menebak arah dan menahan penalti!');
+            events.add(evM);
+            newEvents.add(evM);
           }
         } else if (rng.nextDouble() < 0.17) {
           final st = stats[offender.jugid]!;
           if (st.amarillas >= 1 || rng.nextDouble() < 0.035) {
             st.rojas++;
             st.rating -= 1.2;
-            events.add(MatchEvent(minute, 'roja', sideno, offender.jugid,
-                'KARTU MERAH! ${offender.nombre} diusir keluar lapangan.'));
+            final evR = MatchEvent(minute, 'roja', sideno, offender.jugid,
+                'KARTU MERAH! ${offender.nombre} diusir keluar lapangan.');
+            events.add(evR);
+            newEvents.add(evR);
             fTeam.xi.remove(offender);
             if (fTeam == home) {
               suspendedHome.add(offender.jugid);
@@ -327,22 +502,31 @@ class MatchEngine {
           } else {
             st.amarillas++;
             st.rating -= 0.15;
-            events.add(MatchEvent(minute, 'amarilla', sideno, offender.jugid,
-                'Kartu kuning untuk ${offender.nombre} karena pelanggaran keras.'));
+            final evY = MatchEvent(minute, 'amarilla', sideno, offender.jugid,
+                'Kartu kuning untuk ${offender.nombre} karena pelanggaran keras.');
+            events.add(evY);
+            newEvents.add(evY);
           }
         }
       }
+    }
 
-      // Cedera
-      if (rng.nextDouble() < 0.0028) {
-        final isHome = rng.nextBool();
-        final t = isHome ? home : away;
-        if (t.outfield.isEmpty) continue;
+    // Cedera
+    if (rng.nextDouble() < 0.0028) {
+      final isHomeInj = rng.nextBool();
+      final t = isHomeInj ? home : away;
+      if (t.outfield.isNotEmpty) {
         final victim = t.outfield[rng.nextInt(t.outfield.length)];
-        stats[victim.jugid]!.rating -= 0.1;
-        events.add(MatchEvent(minute, 'lesion', isHome ? 0 : 1, victim.jugid,
-            '${victim.nombre} terjatuh dan memegang kakinya. Dia harus keluar lapangan.'));
-        if (isHome) {
+        stats[victim.jugid]?.rating -= 0.1;
+        final evI = MatchEvent(
+            minute,
+            'lesion',
+            isHomeInj ? 0 : 1,
+            victim.jugid,
+            '${victim.nombre} terjatuh dan memegang kakinya. Dia cedera.');
+        events.add(evI);
+        newEvents.add(evI);
+        if (isHomeInj) {
           injuriesHome.add(victim.jugid);
         } else {
           injuriesAway.add(victim.jugid);
@@ -350,19 +534,24 @@ class MatchEngine {
       }
     }
 
-    // Rating akhir: menyesuaikan hasil tim + penampilan
+    return newEvents;
+  }
+
+  MatchResult finalize() {
+    if (_finalized != null) return _finalized!;
+    final homePossession = currentPossessionHome;
+
     for (final e in stats.entries) {
       final st = e.value;
-      st.minutos = 90;
       final isHomePlayer = st.team == 0;
       final diff = isHomePlayer ? homeGoals - awayGoals : awayGoals - homeGoals;
       st.rating += diff * 0.16;
-      st.rating += (isHomePlayer ? (homePossession - 50) : (50 - homePossession)) * 0.008;
+      st.rating +=
+          (isHomePlayer ? (homePossession - 50) : (50 - homePossession)) * 0.008;
       st.rating = st.rating.clamp(3.0, 9.9);
-      st.minutos = 90;
+      if (st.minutos == 0) st.minutos = 90;
     }
 
-    // MVP: rating tertinggi
     int? mvpId;
     double best = -1;
     for (final e in stats.entries) {
@@ -372,7 +561,6 @@ class MatchEngine {
       }
     }
 
-    // Adu penalti bila butuh pemenang (format gugur)
     var penHome = 0, penAway = 0;
     if (needWinner && homeGoals == awayGoals) {
       events.add(MatchEvent(totalMinutes, 'penalti_keputusan', null, null,
@@ -385,9 +573,11 @@ class MatchEngine {
           if (rng.nextDouble() < 0.74) penAway++;
         }
       }
+      events.add(MatchEvent(totalMinutes, 'penalti_gol', penHome > penAway ? 0 : 1, null,
+          'Hasil adu penalti: ${home.name} $penHome - $penAway ${away.name}!'));
     }
 
-    return MatchResult(
+    _finalized = MatchResult(
       homeGoals: homeGoals,
       awayGoals: awayGoals,
       events: events,
@@ -406,17 +596,49 @@ class MatchEngine {
       penHome: needWinner && (penHome + penAway) > 0 ? penHome : null,
       penAway: needWinner && (penHome + penAway) > 0 ? penAway : null,
     );
+    return _finalized!;
+  }
+}
+
+class MatchEngine {
+  final Random rng;
+  MatchEngine([Random? r]) : rng = r ?? Random();
+
+  LiveMatchSession createSession(
+    TeamSetup home,
+    TeamSetup away, {
+    int userSide = 0,
+    bool needWinner = false,
+    bool homeAdvantage = true,
+  }) {
+    return LiveMatchSession(
+      home: home,
+      away: away,
+      userSide: userSide,
+      needWinner: needWinner,
+      homeAdvantage: homeAdvantage,
+      rng: rng,
+    );
   }
 
-  double atk_teamPressure(TeamSetup t) {
-    switch (t.tactics.presion) {
-      case Pressure.alta:
-        return 1.35;
-      case Pressure.baja:
-        return 0.72;
-      default:
-        return 1.0;
+  MatchResult simulate(
+    TeamSetup home,
+    TeamSetup away, {
+    bool needWinner = false,
+    bool homeAdvantage = true,
+  }) {
+    final s = LiveMatchSession(
+      home: home,
+      away: away,
+      userSide: -1,
+      needWinner: needWinner,
+      homeAdvantage: homeAdvantage,
+      rng: rng,
+    );
+    while (!s.isFinished) {
+      s.stepMinute();
     }
+    return s.finalize();
   }
 
   /// Simulasi cepat untuk laga tim AI (tanpa log menit): pakai Poisson

@@ -121,6 +121,7 @@ class GameService {
 
     final seedPais = leagues.indexOf(liga) + 1;
     final toridLiga = await _leagueTorneoId(liga.name);
+    final toridCup = await _cupTorneoId(liga.country);
     final teamRows = await db.query('eq_equipos',
         where: 'equi_paid = ?', whereArgs: [seedPais], orderBy: 'equid');
     final teamIds = teamRows.map((r) => r['equid'] as int).toList();
@@ -129,6 +130,24 @@ class GameService {
       powers[id] = await _powerForTeam(id, teamIds);
     }
     final fixtures = _roundRobin(teamIds);
+    final leagueRounds = fixtures.length * 2;
+    final totalWeeks = leagueRounds + 4;
+    final c1 = 6;
+    final c2 = (totalWeeks * 0.38).round();
+    final c3 = (totalWeeks * 0.66).round();
+    final c4 = totalWeeks - 2;
+    final cupWeeks = [c1, c2, c3, c4];
+    final cupWeekSet = cupWeeks.toSet();
+    final leagueWeekSlots = <int>[];
+    for (var w = 1; w <= totalWeeks; w++) {
+      if (!cupWeekSet.contains(w)) leagueWeekSlots.add(w);
+    }
+
+    // 16 peserta Piala Domestik (selalu sertakan klub user)
+    final userEquid = prev.i('user_equid');
+    final cupPool = List.of(teamIds)..remove(userEquid);
+    cupPool.shuffle(Random());
+    final cupTeams = [userEquid, ...cupPool.take(15)]..shuffle(Random());
 
     await db.transaction((txn) async {
       await txn.insert('tor_temporadas', {
@@ -163,25 +182,58 @@ class GameService {
             whereArgs: [id]);
       }
 
-      var jornada = 0;
+      var rIdx = 0;
       for (final round in fixtures) {
-        jornada++;
+        final w1 = leagueWeekSlots[rIdx];
+        final w2 = leagueWeekSlots[rIdx + fixtures.length];
+        rIdx++;
         for (final m in round) {
-          await _insertFixture(toridLiga, tempid, m[0], m[1], jornada, txn: txn);
+          await _insertFixture(toridLiga, tempid, m[0], m[1], w1, txn: txn);
         }
         for (final m in round) {
+          await _insertFixture(toridLiga, tempid, m[1], m[0], w2, txn: txn);
+        }
+      }
+
+      // Jadwalkan babak 16 Besar Piala Domestik (par_vuelta = 1, par_fase = 1)
+      if (toridCup != null && cupTeams.length >= 2) {
+        final pairs = (cupTeams.length ~/ 2) * 2;
+        for (var i = 0; i < pairs; i += 2) {
           await _insertFixture(
-              toridLiga, tempid, m[1], m[0], jornada + fixtures.length,
-              txn: txn);
+            toridCup,
+            tempid,
+            cupTeams[i],
+            cupTeams[i + 1],
+            c1,
+            fase: 1,
+            vuelta: 1,
+            txn: txn,
+          );
         }
       }
     });
-    await world.setInt('total_weeks', fixtures.length * 2);
+    await world.setState('cup_weeks', jsonEncode(cupWeeks));
+    await world.setState('sponsor_name', '');
+    await world.setInt('sponsor_bonus', 0);
+    await world.setInt('sponsor_target', 0);
+    await world.setState('pending_offer', '');
+    await world.setInt('total_weeks', totalWeeks);
   }
 
   Future<int> _leagueTorneoId(String name) async {
     final r = await db.query('tor_torneos',
-        where: 'tor_nombre = ?', whereArgs: [name], limit: 1);
+        where: 'tor_nombre = ? AND tor_organizacion = 1',
+        whereArgs: [name],
+        limit: 1);
+    return r.first['torid'] as int;
+  }
+
+  Future<int?> _cupTorneoId(String country) async {
+    final r = await db.query('tor_torneos',
+        where: 'tor_nombre = ? AND tor_organizacion = 3',
+        whereArgs: ['Copa $country'],
+        limit: 1);
+    if (r.isEmpty) return null;
     return r.first['torid'] as int;
   }
 
@@ -196,7 +248,7 @@ class GameService {
 
   Future<void> _insertFixture(
       int torid, int tempid, int home, int away, int jornada,
-      {DatabaseExecutor? txn}) async {
+      {int? fase, int vuelta = 0, DatabaseExecutor? txn}) async {
     await (txn ?? db).insert('tor_partidos', {
       'par_torid': torid,
       'par_tempid': tempid,
@@ -206,11 +258,11 @@ class GameService {
       'par_goles_local': 0,
       'par_goles_visita': 0,
       'par_gana': 0,
-      'par_fase': jornada,
+      'par_fase': fase ?? jornada,
       'par_jornada': jornada,
       'par_status': 0,
-      'par_fecha': 'J$jornada',
-      'par_vuelta': 0,
+      'par_fecha': vuelta == 1 ? 'Piala B${fase ?? 1}' : 'J$jornada',
+      'par_vuelta': vuelta,
     });
   }
 
@@ -244,7 +296,12 @@ class GameService {
 
   Future<TeamSetup> buildSetup(Team team, Tactics tac, {bool autoXI = true}) async {
     final squad = await world.squad(team.equid);
-    var xi = squad.where((p) => p.disponible && p.posid == 1).take(1).toList();
+    var xi = squad.where((p) => p.disponible && p.posid == 1).toList()
+      ..sort((a, b) {
+        final t = (b.titular == 1 ? 1 : 0) - (a.titular == 1 ? 1 : 0);
+        return t != 0 ? t : b.poder - a.poder;
+      });
+    xi = xi.take(1).toList();
     // Utamakan pemain bertanda titular
     final listed = squad.where((p) => p.titular == 1 && p.disponible).toList()
       ..sort((a, b) => b.poder - a.poder);
@@ -306,20 +363,13 @@ class GameService {
         where: 'par_tempid = ? AND par_status = 0 AND par_jornada < ?',
         whereArgs: [tempid, week]);
     for (final f in leftovers) {
-      final h = (await world.team(f['par_equid_local'] as int))!;
-      final a = (await world.team(f['par_equid_visita'] as int))!;
-      final (hg, ag) = engine.quickScore(
-          await buildSetup(h, Tactics()), await buildSetup(a, Tactics()));
-      await _saveResult(f, hg, ag, null);
+      await _simAiFixture(f);
     }
 
-    final fixtures = await db.query('tor_partidos',
-        where: 'par_tempid = ? AND par_jornada = ?', whereArgs: [tempid, week]);
-    // Kalau jornada sudah lewat (leg kedua pakai nomor jornada besar), cari yang belum main
     final pending = await db.query('tor_partidos',
         where: 'par_tempid = ? AND par_status = 0 AND par_jornada = ?',
         whereArgs: [tempid, week]);
-    final list = pending.isNotEmpty ? pending : fixtures;
+    final list = pending;
 
     Map<String, dynamic>? userMatchInfo;
     final highlights = <String>[];
@@ -331,29 +381,49 @@ class GameService {
 
       if (isUser && !userSimulatedFast) {
         userMatchInfo = Map<String, dynamic>.from(f);
-        continue; // laga user dimainkan lewat PlayMatchPage
+        continue; // laga user dimainkan lewat MatchSimScreen
       }
 
-      final homeTeam = (await world.team(home))!;
-      final awayTeam = (await world.team(away))!;
-      final hSetup = await buildSetup(homeTeam, Tactics());
-      final aSetup = await buildSetup(awayTeam, Tactics());
-      final (hg, ag) = engine.quickScore(hSetup, aSetup);
-      await _saveResult(f, hg, ag, null);
+      final (hNombre, hg, ag, aNombre) = await _simAiFixture(f);
       if (isUser) {
-        highlights.add('${homeTeam.nombre} $hg-$ag ${awayTeam.nombre} (disimulasikan)');
+        highlights.add('$hNombre $hg-$ag $aNombre (disimulasikan)');
       }
     }
 
+    await _advanceCupBracketIfReady(tempid);
     await world.setInt('week', week);
     await _advanceConditions();
     await refreshPowers();
     await _weeklyFinances();
+    await _maybeAiTransfer(week);
+    await _maybeIncomingOffer(week);
     return WeekSummary(week, userMatchInfo, highlights);
   }
 
-  /// Mainkan laga user secara detail
-  Future<MatchResult> playUserMatch(int partid, {bool needWinner = false}) async {
+  Future<(String, int, int, String)> _simAiFixture(
+      Map<String, dynamic> f) async {
+    final h = (await world.team(f['par_equid_local'] as int))!;
+    final a = (await world.team(f['par_equid_visita'] as int))!;
+    final isCup = (f['par_vuelta'] as int? ?? 0) == 1;
+    final (hg, ag) = engine.quickScore(
+        await buildSetup(h, Tactics()), await buildSetup(a, Tactics()));
+    int? penH, penA;
+    if (isCup && hg == ag) {
+      if (Random().nextBool()) {
+        penH = 5;
+        penA = 4;
+      } else {
+        penH = 4;
+        penA = 5;
+      }
+    }
+    await _saveResult(f, hg, ag, null, penHome: penH, penAway: penA);
+    return (h.nombre, hg, ag, a.nombre);
+  }
+
+  /// Siapkan sesi pertandingan live interaktif untuk user.
+  Future<LiveMatchSession> startLiveUserMatch(int partid,
+      {bool needWinner = false}) async {
     final st = await world.state();
     final tac = st.tactics();
     final rows =
@@ -361,16 +431,46 @@ class GameService {
     final f = rows.first;
     final homeId = f['par_equid_local'] as int;
     final awayId = f['par_equid_visita'] as int;
+    final userEquid = st.i('user_equid');
+    final isCup = (f['par_vuelta'] as int? ?? 0) == 1;
     final homeTeam = (await world.team(homeId))!;
     final awayTeam = (await world.team(awayId))!;
-    final hSetup = await buildSetup(homeTeam, homeId == st.i('user_equid') ? tac : Tactics());
-    final aSetup = await buildSetup(awayTeam, awayId == st.i('user_equid') ? tac : Tactics());
-    final result = engine.simulate(hSetup, aSetup, needWinner: needWinner, homeAdvantage: true);
+    final hSetup =
+        await buildSetup(homeTeam, homeId == userEquid ? tac : Tactics());
+    final aSetup =
+        await buildSetup(awayTeam, awayId == userEquid ? tac : Tactics());
+    final userSide = homeId == userEquid ? 0 : (awayId == userEquid ? 1 : -1);
+    return engine.createSession(
+      hSetup,
+      aSetup,
+      userSide: userSide,
+      needWinner: needWinner || isCup,
+      homeAdvantage: true,
+    );
+  }
 
+  /// Simpan hasil dari sesi live interaktif ke database & kas.
+  Future<void> commitUserMatchResult(int partid, MatchResult result) async {
+    final rows =
+        await db.query('tor_partidos', where: 'partid = ?', whereArgs: [partid]);
+    final f = rows.first;
+    final homeTeam = (await world.team(f['par_equid_local'] as int))!;
+    final awayTeam = (await world.team(f['par_equid_visita'] as int))!;
     await _saveResult(f, result.homeGoals, result.awayGoals, result,
         penHome: result.penHome, penAway: result.penAway);
     await _applyMatchAftermath(result, homeTeam, awayTeam);
     await _financesForMatch(homeTeam, awayTeam, result, partid);
+    await _advanceCupBracketIfReady(f['par_tempid'] as int);
+  }
+
+  /// Mainkan laga user sekaligus (dipakai oleh test/simulasi instan).
+  Future<MatchResult> playUserMatch(int partid, {bool needWinner = false}) async {
+    final session = await startLiveUserMatch(partid, needWinner: needWinner);
+    while (!session.isFinished) {
+      session.stepMinute();
+    }
+    final result = session.finalize();
+    await commitUserMatchResult(partid, result);
     return result;
   }
 
@@ -387,20 +487,104 @@ class GameService {
         whereArgs: [tempid, targetWeek]);
     final out = <String>[];
     for (final f in pending) {
-      final h = (await world.team(f['par_equid_local'] as int))!;
-      final a = (await world.team(f['par_equid_visita'] as int))!;
-      final (hg, ag) = engine.quickScore(
-          await buildSetup(h, Tactics()), await buildSetup(a, Tactics()));
-      await _saveResult(f, hg, ag, null);
-      out.add('${h.nombre} $hg-$ag ${a.nombre}');
+      final (hn, hg, ag, an) = await _simAiFixture(f);
+      out.add('$hn $hg-$ag $an');
     }
+    await _advanceCupBracketIfReady(tempid);
     if (targetWeek > currentW) {
       await world.setInt('week', targetWeek);
       await _advanceConditions();
       await refreshPowers();
       await _weeklyFinances();
+      await _maybeAiTransfer(targetWeek);
+      await _maybeIncomingOffer(targetWeek);
     }
     return out;
+  }
+
+  Future<void> _advanceCupBracketIfReady(int tempid) async {
+    final st = await world.state();
+    final rawCupWeeks = st['cup_weeks'];
+    if (rawCupWeeks == null || rawCupWeeks.isEmpty) return;
+    final cupWeeks = (jsonDecode(rawCupWeeks) as List).cast<int>();
+    if (cupWeeks.length < 4) return;
+
+    final allCup = await db.query('tor_partidos',
+        where: 'par_tempid = ? AND par_vuelta = 1',
+        whereArgs: [tempid],
+        orderBy: 'par_fase, partid');
+    if (allCup.isEmpty) return;
+
+    final currentFase = allCup
+        .map((r) => (r['par_fase'] as int?) ?? 1)
+        .reduce((a, b) => a > b ? a : b);
+    final faseMatches =
+        allCup.where((r) => (r['par_fase'] as int? ?? 1) == currentFase).toList();
+    if (faseMatches.any((r) => (r['par_status'] as int? ?? 0) == 0)) {
+      return; // babak piala ini belum selesai semua
+    }
+
+    if (currentFase >= 4) {
+      // Final selesai -> umumkan juara piala!
+      final finalMatch = faseMatches.first;
+      final winnerId = finalMatch['par_gana'] as int? ?? 0;
+      if (winnerId > 0) {
+        final alreadyAwarded = await db.query('mensajes',
+            where: 'msg_tipo = ? AND msg_semana = ?',
+            whereArgs: ['cup_win_$tempid', tempid]);
+        if (alreadyAwarded.isEmpty) {
+          final winner = await world.team(winnerId);
+          final userEquid = st.i('user_equid');
+          final torid = finalMatch['par_torid'] as int;
+          final torRow = await db.query('tor_torneos',
+              where: 'torid = ?', whereArgs: [torid], limit: 1);
+          final cupName =
+              torRow.isNotEmpty ? (torRow.first['tor_nombre'] as String) : 'Piala Domestik';
+          final prize =
+              torRow.isNotEmpty ? (torRow.first['tor_premio_equipos'] as int? ?? 2000000) : 2000000;
+          if (winnerId == userEquid && winner != null) {
+            await world.setInt('trophies', st.i('trophies') + 1);
+            await db.update('eq_equipos',
+                {'equi_presupuesto': winner.presupuesto + prize},
+                where: 'equid = ?', whereArgs: [userEquid]);
+          }
+          await world.addMessage(
+            winnerId == userEquid ? 'JUARA $cupName!' : 'Juara $cupName',
+            winnerId == userEquid
+                ? 'Luar biasa! ${winner?.nombre} menjuarai $cupName dan meraih hadiah ${_fmt(prize)}!'
+                : '${winner?.nombre ?? "Klub"} menjuarai $cupName musim ini.',
+            'cup_win_$tempid',
+            tempid,
+          );
+        }
+      }
+      return;
+    }
+
+    final nextFase = currentFase + 1;
+    final winners = faseMatches
+        .map((r) => r['par_gana'] as int? ?? 0)
+        .where((id) => id > 0)
+        .toList();
+    if (winners.length < 2) return;
+
+    final torid = faseMatches.first['par_torid'] as int;
+    final nextWeek = cupWeeks[nextFase - 1];
+    final pairs = (winners.length ~/ 2) * 2;
+    await db.transaction((txn) async {
+      for (var i = 0; i < pairs; i += 2) {
+        await _insertFixture(
+          torid,
+          tempid,
+          winners[i],
+          winners[i + 1],
+          nextWeek,
+          fase: nextFase,
+          vuelta: 1,
+          txn: txn,
+        );
+      }
+    });
   }
 
   Future<void> _saveResult(Map<String, dynamic> f, int hg, int ag,
@@ -411,12 +595,17 @@ class GameService {
     final tempid = f['par_tempid'] as int;
     final lid = f['par_equid_local'] as int;
     final vid = f['par_equid_visita'] as int;
+    final isCup = (f['par_vuelta'] as int? ?? 0) == 1;
+    int winnerId = hg > ag ? lid : (ag > hg ? vid : 0);
+    if (winnerId == 0 && penHome != null && penAway != null && penHome != penAway) {
+      winnerId = penHome > penAway ? lid : vid;
+    }
     await db.update(
         'tor_partidos',
         {
           'par_goles_local': hg,
           'par_goles_visita': ag,
-          'par_gana': hg > ag ? lid : (ag > hg ? vid : 0),
+          'par_gana': winnerId,
           'par_status': 1,
           'par_penal_goles_local': penHome,
           'par_penal_goles_visita': penAway,
@@ -424,8 +613,10 @@ class GameService {
         where: 'partid = ?',
         whereArgs: [partid]);
 
-    await _updateTable(lid, hg, ag, tempid);
-    await _updateTable(vid, ag, hg, tempid);
+    if (!isCup) {
+      await _updateTable(lid, hg, ag, tempid);
+      await _updateTable(vid, ag, hg, tempid);
+    }
 
     if (result != null) {
       for (final st in result.stats.values) {
@@ -589,12 +780,25 @@ class GameService {
     final st = await world.state();
     final userEquid = st.i('user_equid');
     final stadium = await world.stadium(home.estaid);
-    // Penonton dipengaruhi hasil & reputasi
-    final fill = (0.55 + (home.poder - 55) / 160).clamp(0.25, 0.99).toDouble();
+    // Penonton dipengaruhi harga tiket, kualitas tim, & gengsi big match
+    final priceFactor = (38 - stadium.precio) / 180.0;
+    final bigMatch = away.poder >= 76 || (home.poder - away.poder).abs() <= 4;
+    final hypeBoost = bigMatch ? 0.10 : 0.0;
+    final fill = (0.55 + (home.poder - 55) / 160 + priceFactor + hypeBoost)
+        .clamp(0.25, 0.99)
+        .toDouble();
     final asistencia = (stadium.capacity * fill).round();
     final ticket = (asistencia * stadium.precio * 0.86).round();
     final tv = (500000 * home.poder / 60).round();
     final ingresos = ticket + tv;
+    if (bigMatch && (home.equid == userEquid || away.equid == userEquid)) {
+      await world.addMessage(
+        'Big Match: ${home.nombre} ${r.homeGoals}-${r.awayGoals} ${away.nombre}',
+        'Sebanyak $asistencia penonton memadati ${stadium.nombre} pada laga penuh gengsi ini.',
+        'info',
+        st.i('week'),
+      );
+    }
     // Update partido
     await db.update(
         'tor_partidos',
@@ -973,9 +1177,12 @@ class GameService {
             : userPos <= 10
                 ? (liga.prize * 0.22).round()
                 : (liga.prize * 0.1).round();
+    final sponsorBonus = (st.i('sponsor_target') > 0 && userPos <= st.i('sponsor_target'))
+        ? st.i('sponsor_bonus')
+        : 0;
     final user = await userTeam();
     await db.update('eq_equipos',
-        {'equi_presupuesto': user.presupuesto + prize},
+        {'equi_presupuesto': user.presupuesto + prize + sponsorBonus},
         where: 'equid = ?', whereArgs: [userEquid]);
 
     // premi pemain
@@ -1167,6 +1374,214 @@ class GameService {
   Future<void> nextSeason() async {
     final st = await world.state();
     await startSeason(st.i('season_year'), first: false);
+  }
+
+  // ---------------- LIVING WORLD & MANUAL CONTROLS ----------------
+
+  Future<void> swapStarter(int starterId, int reserveId) async {
+    final st = await world.state();
+    final tac = st.tactics();
+    final team = await userTeam();
+    final currentXi = (await buildSetup(team, tac)).xi.map((p) => p.jugid).toSet();
+    currentXi.remove(starterId);
+    currentXi.add(reserveId);
+    await db.update('jug_jugadores', {'jug_titular': 0},
+        where:
+            'jugid IN (SELECT eqju_jugid FROM eq_equipos_jugadores WHERE eqju_equid = ?)',
+        whereArgs: [team.equid]);
+    for (final id in currentXi) {
+      await db.update('jug_jugadores', {'jug_titular': 1},
+          where: 'jugid = ?', whereArgs: [id]);
+    }
+  }
+
+  Future<void> setCaptain(int jugid) async {
+    final st = await world.state();
+    final userEquid = st.i('user_equid');
+    await db.update('jug_jugadores', {'jug_capitan': 0},
+        where:
+            'jugid IN (SELECT eqju_jugid FROM eq_equipos_jugadores WHERE eqju_equid = ?)',
+        whereArgs: [userEquid]);
+    await db.update('jug_jugadores', {'jug_capitan': 1},
+        where: 'jugid = ?', whereArgs: [jugid]);
+  }
+
+  Future<void> setTicketPrice(int price) async {
+    final t = await userTeam();
+    await db.update('eq_estadios', {'es_precio': price.clamp(10, 90)},
+        where: 'estaid = ?', whereArgs: [t.estaid]);
+  }
+
+  Future<List<Map<String, dynamic>>> availableSponsors() async {
+    final team = await userTeam();
+    final base = (team.poder * 350000).round();
+    return [
+      {
+        'name': sponsorsLow[team.equid % sponsorsLow.length],
+        'upfront': (base * 0.6).round(),
+        'bonus': (base * 0.5).round(),
+        'target': 12,
+        'desc': 'Target aman: finis 12 besar',
+      },
+      {
+        'name': 'Nusantara Air',
+        'upfront': (base * 0.8).round(),
+        'bonus': base,
+        'target': 6,
+        'desc': 'Target papan atas: finis 6 besar',
+      },
+      {
+        'name': 'Garuda Global',
+        'upfront': base,
+        'bonus': (base * 1.8).round(),
+        'target': 2,
+        'desc': 'Target juara: finis 2 besar',
+      },
+    ];
+  }
+
+  Future<String> selectSponsor(Map<String, dynamic> sp) async {
+    final st = await world.state();
+    if ((st['sponsor_name'] ?? '').isNotEmpty) {
+      return 'Sponsor musim ini sudah dikontrak (${st['sponsor_name']}).';
+    }
+    final user = await userTeam();
+    final upfront = sp['upfront'] as int;
+    await db.update('eq_equipos',
+        {'equi_presupuesto': user.presupuesto + upfront},
+        where: 'equid = ?', whereArgs: [user.equid]);
+    await world.setState('sponsor_name', sp['name'] as String);
+    await world.setInt('sponsor_bonus', sp['bonus'] as int);
+    await world.setInt('sponsor_target', sp['target'] as int);
+    await world.addMessage(
+      'Kontrak Sponsor: ${sp['name']}',
+      'Dana awal ${_fmt(upfront)} masuk kas klub! Bonus ${_fmt(sp['bonus'] as int)} cair bila finis ${sp['target']} besar.',
+      'finance',
+      st.i('week'),
+    );
+    return 'Kontrak sponsor ${sp['name']} ditandatangani! Dana masuk ${_fmt(upfront)}.';
+  }
+
+  Future<Map<String, dynamic>?> pendingOffer() async {
+    final st = await world.state();
+    final raw = st['pending_offer'];
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      return jsonDecode(raw) as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<String> respondIncomingOffer(bool accept) async {
+    final offer = await pendingOffer();
+    await world.setState('pending_offer', '');
+    if (offer == null) return 'Tawaran sudah kedaluwarsa.';
+    if (!accept) {
+      return 'Tawaran ${offer['buyer_name']} untuk ${offer['player_name']} ditolak.';
+    }
+    final st = await world.state();
+    final userEquid = st.i('user_equid');
+    final jugid = offer['jugid'] as int;
+    final buyerId = offer['buyer_equid'] as int;
+    final amount = offer['amount'] as int;
+    final squad = await world.squad(userEquid);
+    if (squad.length <= 14) return 'Skuad minimal 14 pemain, tidak bisa dijual.';
+    final user = await userTeam();
+
+    await db.delete('eq_equipos_jugadores',
+        where: 'eqju_jugid = ?', whereArgs: [jugid]);
+    await db.insert('eq_equipos_jugadores',
+        {'eqju_equid': buyerId, 'eqju_jugid': jugid});
+    await db.update('eq_equipos',
+        {'equi_presupuesto': user.presupuesto + amount},
+        where: 'equid = ?', whereArgs: [userEquid]);
+    await db.insert('tor_transferencias_jugadores', {
+      'tra_jugid': jugid,
+      'tra_equid_origen': userEquid,
+      'tra_equid_destino': buyerId,
+      'tra_tipo_transferencia': 'venta',
+      'tra_valor': amount,
+      'tra_fecha': 'T${st.i('season_year')}',
+      'tra_semana': st.i('week'),
+      'tra_nombre': offer['player_name'],
+    });
+    await world.addMessage(
+      'Penjualan selesai',
+      '${offer['player_name']} resmi dilepas ke ${offer['buyer_name']} seharga ${_fmt(amount)}.',
+      'transfer',
+      st.i('week'),
+    );
+    return '${offer['player_name']} terjual ke ${offer['buyer_name']} (${_fmt(amount)})!';
+  }
+
+  Future<void> _maybeIncomingOffer(int week) async {
+    if (week % 4 != 3) return;
+    final st = await world.state();
+    if ((st['pending_offer'] ?? '').isNotEmpty) return;
+    final userEquid = st.i('user_equid');
+    final squad = await world.squad(userEquid);
+    if (squad.length <= 16 || Random().nextDouble() > 0.55) return;
+    final candidates = squad.where((p) => p.posid != 1).toList()
+      ..sort((a, b) => b.poder - a.poder);
+    if (candidates.isEmpty) return;
+    final target = candidates[Random().nextInt(min(6, candidates.length))];
+    final buyer = await _randomClub();
+    final amount = (target.valor * (1.05 + Random().nextDouble() * 0.35)).round();
+    final payload = {
+      'jugid': target.jugid,
+      'player_name': target.nombre,
+      'player_poder': target.poder,
+      'buyer_equid': buyer.equid,
+      'buyer_name': buyer.nombre,
+      'amount': amount,
+    };
+    await world.setState('pending_offer', jsonEncode(payload));
+    await world.addMessage(
+      'Tawaran masuk: ${target.nombre}',
+      '${buyer.nombre} menawar ${target.nombre} (OVR ${target.poder}) seharga ${_fmt(amount)}. '
+          'Buka halaman Klub untuk menerima atau menolak.',
+      'transfer',
+      week,
+    );
+  }
+
+  Future<void> _maybeAiTransfer(int week) async {
+    if (week % 3 != 0) return;
+    final st = await world.state();
+    final userEquid = st.i('user_equid');
+    final rows = await db.rawQuery('''
+      SELECT j.jugid, j.jug_nombre, j.jug_valor, ej.eqju_equid as orig
+      FROM jug_jugadores j
+      JOIN eq_equipos_jugadores ej ON ej.eqju_jugid = j.jugid
+      WHERE j.jug_jstdid = 1 AND ej.eqju_equid != ? AND j.jug_mercado = 1
+      ORDER BY RANDOM() LIMIT 1
+    ''', [userEquid]);
+    if (rows.isEmpty) return;
+    final r = rows.first;
+    final origId = r['orig'] as int;
+    final count = await db.rawQuery(
+        'SELECT COUNT(*) c FROM eq_equipos_jugadores WHERE eqju_equid = ?',
+        [origId]);
+    if (((count.first['c'] as int?) ?? 0) <= 16) return;
+    final buyer = await _randomClub();
+    if (buyer.equid == origId) return;
+    final jugid = r['jugid'] as int;
+    final val = (r['jug_valor'] as int?) ?? 500000;
+    await db.delete('eq_equipos_jugadores',
+        where: 'eqju_jugid = ?', whereArgs: [jugid]);
+    await db.insert('eq_equipos_jugadores',
+        {'eqju_equid': buyer.equid, 'eqju_jugid': jugid});
+    await db.insert('tor_transferencias_jugadores', {
+      'tra_jugid': jugid,
+      'tra_equid_origen': origId,
+      'tra_equid_destino': buyer.equid,
+      'tra_tipo_transferencia': 'compra',
+      'tra_valor': val,
+      'tra_fecha': 'T${st.i('season_year')}',
+      'tra_semana': week,
+      'tra_nombre': r['jug_nombre'],
+    });
   }
 
   // ---------------- MISC ----------------

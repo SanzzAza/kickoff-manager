@@ -318,6 +318,24 @@ class _PlayerDetailSheetState extends State<PlayerDetailSheet> {
                 ),
               ],
             ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: busy
+                  ? null
+                  : () async {
+                      await widget.service.setCaptain(p.jugid);
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text('${p.nombre} ditunjuk sebagai kapten tim!')));
+                      Navigator.pop(context);
+                    },
+              icon: Icon(
+                  p.capitan == 1 ? Icons.star : Icons.workspace_premium,
+                  size: 18,
+                  color: AppColors.gold),
+              label: Text(
+                  p.capitan == 1 ? 'Kapten Saat Ini' : 'Jadikan Kapten'),
+            ),
           ] else
             ElevatedButton.icon(
               onPressed: busy ? null : _offer,

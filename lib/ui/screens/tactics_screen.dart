@@ -14,6 +14,7 @@ class TacticsScreen extends StatefulWidget {
 class _TacticsScreenState extends State<TacticsScreen> {
   Tactics? tac;
   List<Player> xi = [];
+  List<Player> bench = [];
   bool saved = true;
 
   @override
@@ -30,7 +31,48 @@ class _TacticsScreenState extends State<TacticsScreen> {
     setState(() {
       tac = t;
       xi = setup.xi;
+      bench = setup.bench;
     });
+  }
+
+  Future<void> _pickReplacement(Player starter) async {
+    if (bench.isEmpty) return;
+    final picked = await showModalBottomSheet<Player>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text('Ganti ${starter.nombre} dengan:',
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 10),
+          ...bench.map((b) => ListTile(
+                dense: true,
+                leading: CircleAvatar(
+                  radius: 14,
+                  backgroundColor:
+                      Squads.positionColor(b.posid).withOpacity(0.18),
+                  child: Text(Squads.positionName(b.posid),
+                      style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                          color: Squads.positionColor(b.posid))),
+                ),
+                title: Text(b.nombre, style: const TextStyle(fontSize: 13)),
+                subtitle: Text('OVR ${b.poder} · Kondisi ${b.condicion}%',
+                    style: const TextStyle(fontSize: 11, color: AppColors.muted)),
+                trailing: PowerBadge(b.poder),
+                onTap: () => Navigator.pop(ctx, b),
+              )),
+        ],
+      ),
+    );
+    if (picked == null) return;
+    await widget.service.swapStarter(starter.jugid, picked.jugid);
+    await _load();
   }
 
   Future<void> _save() async {
@@ -170,42 +212,50 @@ class _TacticsScreenState extends State<TacticsScreen> {
               saved = false;
             });
           }),
-          SectionTitle('Starting XI (otomatis)'),
+          SectionTitle('Starting XI (ketuk untuk tukar)'),
           Card(
             margin: const EdgeInsets.symmetric(horizontal: 14),
             child: Column(
               children: xi
-                  .map((p) => Padding(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                        child: Row(
-                          children: [
-                            SizedBox(
+                  .map((p) => InkWell(
+                        onTap: () => _pickReplacement(p),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 7),
+                          child: Row(
+                            children: [
+                              SizedBox(
+                                  width: 34,
+                                  child: Text('${p.numero}',
+                                      style: const TextStyle(
+                                          fontSize: 11,
+                                          color: AppColors.muted))),
+                              Container(
                                 width: 34,
-                                child: Text('${p.numero}',
-                                    style: const TextStyle(
-                                        fontSize: 11, color: AppColors.muted))),
-                            Container(
-                              width: 34,
-                              padding: const EdgeInsets.symmetric(vertical: 2),
-                              alignment: Alignment.center,
-                              decoration: BoxDecoration(
-                                  color: Squads.positionColor(p.posid)
-                                      .withOpacity(0.16),
-                                  borderRadius: BorderRadius.circular(4)),
-                              child: Text(Squads.positionName(p.posid),
-                                  style: TextStyle(
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.w800,
-                                      color: Squads.positionColor(p.posid))),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                                child: Text(p.nombre,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(fontSize: 13))),
-                            PowerBadge(p.poder),
-                          ],
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 2),
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                    color: Squads.positionColor(p.posid)
+                                        .withOpacity(0.16),
+                                    borderRadius: BorderRadius.circular(4)),
+                                child: Text(Squads.positionName(p.posid),
+                                    style: TextStyle(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w800,
+                                        color: Squads.positionColor(p.posid))),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                  child: Text(p.nombre,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(fontSize: 13))),
+                              const Icon(Icons.swap_horiz,
+                                  size: 16, color: AppColors.muted),
+                              const SizedBox(width: 6),
+                              PowerBadge(p.poder),
+                            ],
+                          ),
                         ),
                       ))
                   .toList(),

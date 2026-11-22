@@ -179,11 +179,28 @@ class _StadiumScreenState extends State<StadiumScreen> {
             ),
           ),
           SectionTitle('Harga tiket: ${s.precio} / kursi'),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 14),
-            child: Text(
-                'Tiket mahal = pemasukan lebih besar tapi penonton berkurang.',
-                style: TextStyle(fontSize: 11, color: AppColors.muted)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Slider(
+                  value: s.precio.toDouble().clamp(10, 90),
+                  min: 10,
+                  max: 90,
+                  divisions: 16,
+                  label: '${s.precio}',
+                  activeColor: AppColors.primary,
+                  onChanged: (v) async {
+                    await widget.service.setTicketPrice(v.round());
+                    await _load();
+                  },
+                ),
+                const Text(
+                    'Tiket mahal = pemasukan per kursi naik, namun tingkat keterisian turun.',
+                    style: TextStyle(fontSize: 11, color: AppColors.muted)),
+              ],
+            ),
           ),
           SectionTitle('Ekspansi tribun'),
           ...['general', 'plateas', 'tribunas', 'palcos'].map((sector) {
@@ -271,9 +288,11 @@ class _FinanceScreenState extends State<FinanceScreen> {
 
   Future<void> _load() async {
     final team = await widget.service.userTeam();
+    final st = await widget.service.state();
     final squad = await widget.service.world.squad(team.equid);
     final stadium = await widget.service.world.stadium(team.estaid);
     final fixtures = await widget.service.userFixtures();
+    final sponsorsList = await widget.service.availableSponsors();
     final incomes = fixtures
         .where((f) => (f['par_status'] as int? ?? 0) == 1)
         .fold<int>(0, (a, f) => a + ((f['par_ent_ingresos'] as int?) ?? 0));
@@ -281,10 +300,12 @@ class _FinanceScreenState extends State<FinanceScreen> {
     if (!mounted) return;
     setState(() => data = {
           'team': team,
+          'state': st,
           'wages': wages,
           'stadium': stadium,
           'income': incomes,
           'maintenance': (stadium.capacity * 2.1).round(),
+          'sponsorsList': sponsorsList,
         });
   }
 
@@ -294,6 +315,11 @@ class _FinanceScreenState extends State<FinanceScreen> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     final team = data!['team'] as Team;
+    final st = data!['state'] as dynamic;
+    final sponsorName = (st['sponsor_name'] as String?) ?? '';
+    final sponsorBonus = st.i('sponsor_bonus');
+    final sponsorTarget = st.i('sponsor_target');
+    final sponsorsList = data!['sponsorsList'] as List<Map<String, dynamic>>;
     final wages = data!['wages'] as int;
     final income = data!['income'] as int;
     final maint = data!['maintenance'] as int;
@@ -326,6 +352,42 @@ class _FinanceScreenState extends State<FinanceScreen> {
               ),
             ),
           ),
+          SectionTitle('Sponsor Utama Musim Ini'),
+          if (sponsorName.isNotEmpty)
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.verified, color: AppColors.primary),
+                title: Text(sponsorName,
+                    style: const TextStyle(fontWeight: FontWeight.w800)),
+                subtitle: Text(
+                    'Bonus ${formatMoney(sponsorBonus)} jika finis $sponsorTarget besar',
+                    style: const TextStyle(fontSize: 11.5, color: AppColors.muted)),
+              ),
+            )
+          else
+            ...sponsorsList.map((sp) => Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: ListTile(
+                    title: Text(sp['name'] as String,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w800, fontSize: 13.5)),
+                    subtitle: Text(
+                        '${sp['desc']}\nUang muka ${formatMoney(sp['upfront'] as int)} · Bonus ${formatMoney(sp['bonus'] as int)}',
+                        style: const TextStyle(
+                            fontSize: 11, color: AppColors.muted)),
+                    isThreeLine: true,
+                    trailing: FilledButton(
+                      onPressed: () async {
+                        final msg = await widget.service.selectSponsor(sp);
+                        await _load();
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(SnackBar(content: Text(msg)));
+                      },
+                      child: const Text('Pilih'),
+                    ),
+                  ),
+                )),
           SectionTitle('Arus kas musim ini'),
           _line('Pendapatan tiket & TV', income, true),
           _line('Sponsor utama', sponsors, true),

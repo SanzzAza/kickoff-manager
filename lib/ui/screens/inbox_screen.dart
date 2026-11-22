@@ -12,6 +12,7 @@ class InboxScreen extends StatefulWidget {
 
 class _InboxScreenState extends State<InboxScreen> {
   List<Map<String, dynamic>>? msgs;
+  Map<String, dynamic>? offer;
 
   @override
   void initState() {
@@ -21,9 +22,13 @@ class _InboxScreenState extends State<InboxScreen> {
 
   Future<void> _load() async {
     final m = await widget.service.world.messages();
+    final o = await widget.service.pendingOffer();
     await widget.service.markMessagesRead();
     if (!mounted) return;
-    setState(() => msgs = m);
+    setState(() {
+      msgs = m;
+      offer = o;
+    });
   }
 
   IconData _icon(String type) {
@@ -68,19 +73,50 @@ class _InboxScreenState extends State<InboxScreen> {
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                               fontSize: 11.5, color: AppColors.muted)),
-                      onTap: () => showDialog(
-                        context: context,
-                        builder: (ctx) => AlertDialog(
-                          title: Text(m['msg_titulo'] ?? ''),
-                          content: Text(m['msg_texto'] ?? '',
-                              style: const TextStyle(fontSize: 13, height: 1.4)),
-                          actions: [
-                            TextButton(
-                                onPressed: () => Navigator.pop(ctx),
-                                child: const Text('Tutup'))
-                          ],
-                        ),
-                      ),
+                      onTap: () async {
+                        final isOfferMsg = (m['msg_tipo'] == 'transfer') &&
+                            offer != null &&
+                            (m['msg_titulo'] as String? ?? '')
+                                .contains(offer!['player_name'] as String? ?? '___');
+                        await showDialog(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: Text(m['msg_titulo'] ?? ''),
+                            content: Text(m['msg_texto'] ?? '',
+                                style: const TextStyle(fontSize: 13, height: 1.4)),
+                            actions: [
+                              if (isOfferMsg) ...[
+                                TextButton(
+                                    onPressed: () async {
+                                      final msg = await widget.service
+                                          .respondIncomingOffer(false);
+                                      if (!ctx.mounted) return;
+                                      Navigator.pop(ctx);
+                                      if (!mounted) return;
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(content: Text(msg)));
+                                    },
+                                    child: const Text('Tolak')),
+                                FilledButton(
+                                    onPressed: () async {
+                                      final msg = await widget.service
+                                          .respondIncomingOffer(true);
+                                      if (!ctx.mounted) return;
+                                      Navigator.pop(ctx);
+                                      if (!mounted) return;
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(content: Text(msg)));
+                                    },
+                                    child: const Text('Terima')),
+                              ] else
+                                TextButton(
+                                    onPressed: () => Navigator.pop(ctx),
+                                    child: const Text('Tutup'))
+                            ],
+                          ),
+                        );
+                        _load();
+                      },
                     );
                   },
                 ),
