@@ -634,12 +634,15 @@ class _MatchSimScreenState extends State<MatchSimScreen> {
                         const Icon(Icons.analytics_outlined,
                             size: 16, color: AppColors.accent),
                         const SizedBox(width: 6),
-                        const Text('Laporan Intai Lawan',
-                            style: TextStyle(
-                                fontWeight: FontWeight.w800, fontSize: 13)),
-                        const Spacer(),
+                        const Expanded(
+                          child: Text('Intai Lawan',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w800, fontSize: 13)),
+                        ),
                         if (scout!['rank'] != null)
-                          Text('Peringkat ${scout!['rank']}',
+                          Text('P${scout!['rank']}',
                               style: const TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w700,
@@ -649,20 +652,22 @@ class _MatchSimScreenState extends State<MatchSimScreen> {
                     const SizedBox(height: 10),
                     Row(
                       children: [
-                        _miniStat('${scout!['atk']}', 'Serang'),
-                        _miniStat('${scout!['mid']}', 'Tengah'),
-                        _miniStat('${scout!['def']}', 'Bertahan'),
+                        Expanded(child: _miniStat('${scout!['atk']}', 'Serang')),
+                        Expanded(child: _miniStat('${scout!['mid']}', 'Tengah')),
+                        Expanded(child: _miniStat('${scout!['def']}', 'Bertahan')),
                       ],
                     ),
                     if (form.isNotEmpty) ...[
                       const SizedBox(height: 10),
-                      Row(
+                      Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 4,
+                        runSpacing: 4,
                         children: [
-                          const Text('5 laga terakhir: ',
+                          const Text('Formasi 5 laga: ',
                               style: TextStyle(
                                   fontSize: 11, color: AppColors.muted)),
                           ...form.map((f) => Container(
-                                margin: const EdgeInsets.only(right: 4),
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 6, vertical: 2),
                                 decoration: BoxDecoration(
