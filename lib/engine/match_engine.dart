@@ -74,7 +74,12 @@ class MatchEngine {
     return mean + (u - 3) * sd;
   }
 
-  Player _pickWeighted(List<Player> pool, double Function(Player) w) {
+  Player _pickWeighted(List<Player> pool, double Function(Player) w,
+      {Player? fallback}) {
+    if (pool.isEmpty) {
+      if (fallback != null) return fallback;
+      throw StateError('pool pemain kosong');
+    }
     final weights = pool.map((p) => max(0.5, w(p))).toList();
     final total = weights.fold<double>(0, (a, b) => a + b);
     var r = rng.nextDouble() * total;
@@ -156,6 +161,8 @@ class MatchEngine {
         final isHome = side == 0;
         final atk = isHome ? home : away;
         final dfn = isHome ? away : home;
+        // bila salah satu tim tanpa pemain (banyak kartu merah), lewati
+        if (atk.xi.isEmpty || dfn.xi.isEmpty) continue;
         var rate = isHome ? homeChanceRate : awayChanceRate;
         rate *= (1 + (isHome ? homeTilt : -homeTilt));
         if (minute > 75) {
@@ -173,9 +180,11 @@ class MatchEngine {
                 ? 0.2
                 : (p.posid >= 9 ? 3.4 : p.posid >= 5 ? 1.5 : 0.7) *
                     (0.5 + p.poder / 100));
-        final assister = _pickWeighted(
-            attackers.where((p) => p.jugid != shooter.jugid).toList(),
-            (p) => p.posid >= 5 ? 2.2 : 0.8);
+        final mates =
+            attackers.where((p) => p.jugid != shooter.jugid).toList();
+        final assister = mates.isEmpty
+            ? null
+            : _pickWeighted(mates, (p) => p.posid >= 5 ? 2.2 : 0.8);
 
         if (isHome) {
           homeShots++;
@@ -184,7 +193,8 @@ class MatchEngine {
         }
         stats[shooter.jugid]!.tiros++;
 
-        final gk = dfn.xi.firstWhere((p) => p.posid == 1, orElse: () => dfn.xi.first);
+        final gk = dfn.xi.firstWhere((p) => p.posid == 1,
+            orElse: () => dfn.xi.first);
         final quality = shooter.ataque + (atk.attackRating - dfn.defenseRating) * 0.55;
         final roll = rng.nextDouble() * 100 + _gauss(0, 7);
         final onTargetChance =
@@ -228,19 +238,22 @@ class MatchEngine {
           }
           stats[shooter.jugid]!.goles++;
           stats[shooter.jugid]!.rating += 1.0;
-          if (assister.jugid != shooter.jugid) {
+          if (assister != null) {
             stats[assister.jugid]!.asistencias++;
             stats[assister.jugid]!.rating += 0.45;
           }
           final phrase = _goalPhrases[rng.nextInt(_goalPhrases.length)];
           final assistPhrase = _assistPhrases[rng.nextInt(_assistPhrases.length)];
+          final assistText = assister == null
+              ? ''
+              : ', memanfaatkan aksi ${assister.nombre} yang $assistPhrase';
           events.add(MatchEvent(
             minute,
             'gol',
             side,
             shooter.jugid,
-            'GOL! ${shooter.nombre} $phrase, memanfaatkan aksi ${assister.nombre} '
-                'yang $assistPhrase. ${isHome ? homeGoals : awayGoals}-${isHome ? awayGoals : homeGoals}',
+            'GOL! ${shooter.nombre} $phrase$assistText. '
+                '${isHome ? homeGoals : awayGoals}-${isHome ? awayGoals : homeGoals}',
           ));
         } else {
           stats[gk.jugid]!.atajadas++;
@@ -263,14 +276,19 @@ class MatchEngine {
         final fTeam = isHomeFoul ? home : away;
         final oTeam = isHomeFoul ? away : home;
         final sideno = isHomeFoul ? 0 : 1;
-        final offender = _pickWeighted(fTeam.def_players.isEmpty
-            ? fTeam.xi
-            : fTeam.def_players, (p) => p.defensivo / 100 + 0.2);
+        // bila tim sudah habis pemain, tidak ada pelanggaran
+        if (fTeam.xi.isEmpty || oTeam.xi.isEmpty) continue;
+        final offender = _pickWeighted(
+            fTeam.def_players.isEmpty ? fTeam.xi : fTeam.def_players,
+            (p) => p.defensivo / 100 + 0.2,
+            fallback: fTeam.xi.first);
         stats[offender.jugid]!.faltas++;
 
         if (rng.nextDouble() < 0.030) {
           // penalti
-          final taker = _pickWeighted(oTeam.outfield, (p) => p.tembakan.toDouble());
+          final taker = _pickWeighted(oTeam.outfield,
+              (p) => p.tembakan.toDouble(),
+              fallback: oTeam.xi.first);
           final gk = fTeam.xi.firstWhere((p) => p.posid == 1, orElse: () => fTeam.xi.first);
           final scored = rng.nextDouble() < 0.76;
           events.add(MatchEvent(minute, 'penalti_keputusan', sideno, taker.jugid,
@@ -319,6 +337,7 @@ class MatchEngine {
       if (rng.nextDouble() < 0.0028) {
         final isHome = rng.nextBool();
         final t = isHome ? home : away;
+        if (t.outfield.isEmpty) continue;
         final victim = t.outfield[rng.nextInt(t.outfield.length)];
         stats[victim.jugid]!.rating -= 0.1;
         events.add(MatchEvent(minute, 'lesion', isHome ? 0 : 1, victim.jugid,

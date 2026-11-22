@@ -28,7 +28,11 @@ void main() {
     final b = await svc.buildSetup(users, Tactics());
     print('XI rating user: atk ${a.attackRating} mid ${a.midfieldRating} def ${a.defenseRating}');
     int hg=0, ag=0; final eng = MatchEngine(Random(7));
-    for (var i=0;i<40;i++){ final r = eng.simulate(a,b); hg+=r.homeGoals; ag+=r.awayGoals; }
+    for (var i=0;i<40;i++){
+      final a2 = await svc.buildSetup(users, Tactics());
+      final b2 = await svc.buildSetup(users, Tactics());
+      final r = eng.simulate(a2,b2); hg+=r.homeGoals; ag+=r.awayGoals;
+    }
     print('rata-rata sama kuat: ${(hg/40).toStringAsFixed(2)} - ${(ag/40).toStringAsFixed(2)}');
     // kartu/cedera rate
     final r = eng.simulate(a,b);
