@@ -336,11 +336,55 @@ class _PlayerDetailSheetState extends State<PlayerDetailSheet> {
               label: Text(
                   p.capitan == 1 ? 'Kapten Saat Ini' : 'Jadikan Kapten'),
             ),
-          ] else
+          ] else if (clubInfo != null && clubInfo!['team'] == null)
             ElevatedButton.icon(
-              onPressed: busy ? null : _offer,
-              icon: const Icon(Icons.gavel),
-              label: Text(busy ? 'Menegosiasi...' : 'Ajukan tawaran'),
+              onPressed: busy
+                  ? null
+                  : () async {
+                      setState(() => busy = true);
+                      final err =
+                          await widget.service.signFreeAgent(widget.player.jugid);
+                      setState(() => busy = false);
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text(
+                              err ?? '${widget.player.nombre} resmi bergabung gratis!')));
+                      if (err == null && mounted) Navigator.pop(context);
+                    },
+              icon: const Icon(Icons.person_add),
+              label: const Text('Rekrut Gratis (Agen Bebas)'),
+            )
+          else
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: busy ? null : _offer,
+                    icon: const Icon(Icons.gavel, size: 17),
+                    label: Text(busy ? '...' : 'Beli'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: busy
+                        ? null
+                        : () async {
+                            setState(() => busy = true);
+                            final err =
+                                await widget.service.loanPlayer(widget.player.jugid);
+                            setState(() => busy = false);
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                content: Text(err ??
+                                    '${widget.player.nombre} dipinjam 1 musim!')));
+                            if (err == null && mounted) Navigator.pop(context);
+                          },
+                    icon: const Icon(Icons.schedule, size: 17),
+                    label: const Text('Pinjam 1M'),
+                  ),
+                ),
+              ],
             ),
         ],
       ),

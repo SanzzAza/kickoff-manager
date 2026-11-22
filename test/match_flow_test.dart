@@ -66,6 +66,7 @@ void main() {
     expect(find.text('KICK OFF'), findsOneWidget);
 
     // Pastikan KICK OFF untuk laga berikutnya tetap aktif (tidak terkunci)
+    await t.ensureVisible(find.text('Simulasi instan'));
     await t.tap(find.text('Simulasi instan'));
     await t.runAsync(() => Future.delayed(const Duration(milliseconds: 600)));
     await t.pump();

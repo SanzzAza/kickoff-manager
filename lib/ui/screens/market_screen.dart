@@ -19,6 +19,7 @@ class _MarketScreenState extends State<MarketScreen> {
   bool loading = true;
   final search = TextEditingController();
   int? role;
+  bool freeAgentsOnly = false;
   int minPoder = 55;
   int budget = 0;
 
@@ -43,7 +44,11 @@ class _MarketScreenState extends State<MarketScreen> {
   Future<void> _load() async {
     setState(() => loading = true);
     final list = await widget.service.marketPlayers(
-        search: search.text, minPoder: minPoder, posRole: role, limit: 80);
+        search: search.text,
+        minPoder: minPoder,
+        posRole: role,
+        freeAgentsOnly: freeAgentsOnly,
+        limit: 80);
     final team = await widget.service.userTeam();
     final tr = await widget.service.world.transfers(limit: 25);
     if (!mounted) return;
@@ -107,6 +112,18 @@ class _MarketScreenState extends State<MarketScreen> {
                   child: ListView(
                   scrollDirection: Axis.horizontal,
                   children: [
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: FilterChip(
+                        label: const Text('Agen Bebas'),
+                        selected: freeAgentsOnly,
+                        selectedColor: AppColors.primary.withOpacity(0.25),
+                        onSelected: (v) {
+                          setState(() => freeAgentsOnly = v);
+                          _load();
+                        },
+                      ),
+                    ),
                     for (final r in const [
                       [null, 'Semua'],
                       [1, 'Kiper'],
@@ -209,10 +226,14 @@ class _MarketScreenState extends State<MarketScreen> {
                                                 fontSize: 13.5,
                                                 fontWeight: FontWeight.w600)),
                                         Text(
-                                            '${row['club_nombre']} · ${p.edad} th · ${formatMoney(p.valor)}',
-                                            style: const TextStyle(
+                                            (row['club'] as int? ?? 0) == 0
+                                                ? 'Agen Bebas · ${p.edad} th · GRATIS'
+                                                : '${row['club_nombre']} · ${p.edad} th · ${formatMoney(p.valor)}',
+                                            style: TextStyle(
                                                 fontSize: 11,
-                                                color: AppColors.muted)),
+                                                color: (row['club'] as int? ?? 0) == 0
+                                                    ? AppColors.primary
+                                                    : AppColors.muted)),
                                       ],
                                     ),
                                   ),

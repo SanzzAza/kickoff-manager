@@ -442,6 +442,7 @@ class HistoryScreen extends StatefulWidget {
 
 class _HistoryScreenState extends State<HistoryScreen> {
   List<Map<String, dynamic>>? rows;
+  Map<String, dynamic>? stats;
 
   @override
   void initState() {
@@ -451,25 +452,86 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   Future<void> _load() async {
     final r = await widget.service.world.history();
+    final st = await widget.service.managerStats();
     if (!mounted) return;
-    setState(() => rows = r);
+    setState(() {
+      rows = r;
+      stats = st;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Sejarah Klub')),
+      appBar: AppBar(title: const Text('Karier & Sejarah')),
       body: rows == null
           ? const Center(child: CircularProgressIndicator())
-          : rows!.isEmpty
-              ? const EmptyState(
-                  icon: Icons.emoji_events,
-                  text: 'Belum ada musim yang selesai.\nSelesaikan musim pertamamu!')
-              : ListView.builder(
-                  padding: const EdgeInsets.only(bottom: 20),
-                  itemCount: rows!.length,
-                  itemBuilder: (context, i) {
-                    final r = rows![i];
+          : ListView(
+              padding: const EdgeInsets.only(bottom: 24),
+              children: [
+                if (stats != null) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 14, 14, 6),
+                    child: Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.person_pin,
+                                    color: AppColors.primary, size: 22),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                      'Manajer: ${stats!['manager']}',
+                                      style: const TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w900)),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.gold.withOpacity(0.16),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text('${stats!['trophies']} Trofi',
+                                      style: const TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w800,
+                                          color: AppColors.gold)),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                _kpi('Laga', '${stats!['played']}'),
+                                _kpi('M-S-K',
+                                    '${stats!['wins']}-${stats!['draws']}-${stats!['losses']}'),
+                                _kpi('Menang', '${stats!['winRate']}%'),
+                                _kpi('Gol', '${stats!['gf']}:${stats!['ga']}'),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+                const SectionTitle('Riwayat Musim'),
+                if (rows!.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: EmptyState(
+                        icon: Icons.emoji_events,
+                        text:
+                            'Belum ada musim yang selesai.\nSelesaikan musim pertamamu!'),
+                  )
+                else
+                  ...rows!.map((r) {
                     final juara = (r['hist_user_pos'] as int? ?? 0) == 1;
                     return Card(
                       margin: const EdgeInsets.symmetric(
@@ -492,10 +554,23 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                 fontSize: 12, fontWeight: FontWeight.w800)),
                       ),
                     );
-                  },
-                ),
+                  }),
+              ],
+            ),
     );
   }
+
+  Widget _kpi(String l, String v) => Expanded(
+        child: Column(
+          children: [
+            Text(v,
+                style:
+                    const TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 2),
+            Text(l, style: const TextStyle(fontSize: 10, color: AppColors.muted)),
+          ],
+        ),
+      );
 }
 
 // ---------------- AKHIR MUSIM ----------------

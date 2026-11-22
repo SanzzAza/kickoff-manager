@@ -130,28 +130,41 @@ class _TacticsScreenState extends State<TacticsScreen> {
                                 fontWeight: FontWeight.w900, fontSize: 15)),
                       ),
                     ),
-                    // nama pemain per slot
+                    // nama pemain per slot (ketuk langsung di lapangan untuk tukar)
                     ...List.generate(t.formacion.slots.length, (i) {
                       final s = t.formacion.slots[i];
                       final p = i < xi.length ? xi[i] : null;
+                      final w = MediaQuery.of(context).size.width - 28;
+                      final h = w / 0.72;
                       return Positioned(
-                        left: s[0] * MediaQuery.of(context).size.width * 0.0 +
-                            (s[0] * (MediaQuery.of(context).size.width - 28)) - 34,
-                        top: (s[1] * (MediaQuery.of(context).size.width / 0.72 - 28)) - 2,
+                        left: (s[0] * w) - 34,
+                        top: (s[1] * h) - 18,
                         width: 68,
-                        child: Text(
-                          p == null
-                              ? '-'
-                              : p.nombre.split(' ').last.length > 9
-                                  ? p.nombre.split(' ').last.substring(0, 9)
-                                  : p.nombre.split(' ').last,
-                          textAlign: TextAlign.center,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontSize: 8.5,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                              shadows: [Shadow(blurRadius: 3, color: Colors.black)]),
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: p == null ? null : () => _pickReplacement(p),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const SizedBox(height: 22),
+                              Text(
+                                p == null
+                                    ? '-'
+                                    : '${p.capitan == 1 ? "(C) " : ""}${p.nombre.split(' ').last.length > 8 ? p.nombre.split(' ').last.substring(0, 8) : p.nombre.split(' ').last}',
+                                textAlign: TextAlign.center,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    fontSize: 8.5,
+                                    fontWeight: FontWeight.w800,
+                                    color: p?.capitan == 1
+                                        ? AppColors.gold
+                                        : Colors.white,
+                                    shadows: const [
+                                      Shadow(blurRadius: 3, color: Colors.black)
+                                    ]),
+                              ),
+                            ],
+                          ),
                         ),
                       );
                     }),

@@ -13,17 +13,22 @@ class TableScreen extends StatefulWidget {
   State<TableScreen> createState() => _TableScreenState();
 }
 
-class _TableScreenState extends State<TableScreen> with SingleTickerProviderStateMixin {
+class _TableScreenState extends State<TableScreen>
+    with SingleTickerProviderStateMixin {
   late TabController tab;
   List<StandingsRow>? table;
   List<Map<String, dynamic>> scorers = [];
+  List<Map<String, dynamic>> assisters = [];
+  List<Map<String, dynamic>> cupMatches = [];
+  List<Map<String, dynamic>> contiMatches = [];
+  Map<int, Team> teamCache = {};
   Team? userTeam;
   int userEquid = 0;
 
   @override
   void initState() {
     super.initState();
-    tab = TabController(length: 3, vsync: this);
+    tab = TabController(length: 5, vsync: this);
     widget.refreshSignal?.addListener(_onSignal);
     _load();
   }
@@ -41,20 +46,41 @@ class _TableScreenState extends State<TableScreen> with SingleTickerProviderStat
 
   Future<void> _load() async {
     final st = await widget.service.state();
+    final tempid = st.i('tempid');
     final t = await widget.service.standings();
-    final top = await widget.service.world.topScorers(st.i('tempid'), limit: 15);
-    final goals = await widget.service.world.scorerGoals(st.i('tempid'));
+    final top = await widget.service.world.topScorers(tempid, limit: 15);
+    final goals = await widget.service.world.scorerGoals(tempid);
+    final topA = await widget.service.world.topAssisters(tempid, limit: 15);
+    final assists = await widget.service.world.assisterCounts(tempid);
+    final cup = await widget.service.world.cupFixtures(tempid, vuelta: 1);
+    final conti = await widget.service.world.cupFixtures(tempid, vuelta: 2);
     final ut = await widget.service.userTeam();
+
+    final ids = <int>{
+      for (final m in [...cup, ...conti]) ...[
+        m['par_equid_local'] as int,
+        m['par_equid_visita'] as int,
+      ],
+    };
+    final cache = <int, Team>{};
+    for (final id in ids) {
+      final team = await widget.service.world.team(id);
+      if (team != null) cache[id] = team;
+    }
+
     if (!mounted) return;
     setState(() {
       table = t;
       userEquid = ut.equid;
       userTeam = ut;
+      teamCache = cache;
+      cupMatches = cup;
+      contiMatches = conti;
       scorers = top
-          .map((p) => {
-                'player': p,
-                'goals': goals[p.jugid] ?? 0,
-              })
+          .map((p) => {'player': p, 'goals': goals[p.jugid] ?? 0})
+          .toList();
+      assisters = topA
+          .map((p) => {'player': p, 'assists': assists[p.jugid] ?? 0})
           .toList();
     });
   }
@@ -63,15 +89,19 @@ class _TableScreenState extends State<TableScreen> with SingleTickerProviderStat
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Klasemen'),
+        title: const Text('Kompetisi'),
         bottom: TabBar(
           controller: tab,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
           indicatorColor: AppColors.primary,
           labelColor: AppColors.text,
           unselectedLabelColor: AppColors.muted,
           tabs: const [
             Tab(text: 'Tabel'),
-            Tab(text: 'Pencetak Gol'),
+            Tab(text: 'Piala'),
+            Tab(text: 'Kontinental'),
+            Tab(text: 'Statistik'),
             Tab(text: 'Jadwal'),
           ],
         ),
@@ -80,7 +110,16 @@ class _TableScreenState extends State<TableScreen> with SingleTickerProviderStat
           ? const Center(child: CircularProgressIndicator())
           : TabBarView(
               controller: tab,
-              children: [_tableView(), _scorersView(), _fixturesView()],
+              children: [
+                _tableView(),
+                _bracketView(cupMatches, 'Piala Domestik', AppColors.gold),
+                _bracketView(
+                    contiMatches,
+                    'Piala Kontinental\n(Finis 4 besar liga untuk lolos di musim berikutnya)',
+                    const Color(0xFF4FC3F7)),
+                _statsView(),
+                _fixturesView(),
+              ],
             ),
     );
   }
@@ -101,11 +140,15 @@ class _TableScreenState extends State<TableScreen> with SingleTickerProviderStat
                 SizedBox(width: 34),
                 Expanded(child: Text('Klub', style: _hStyle)),
                 SizedBox(
-                    width: 26, child: Text('PJ', style: _hStyle, textAlign: TextAlign.center)),
+                    width: 26,
+                    child: Text('PJ', style: _hStyle, textAlign: TextAlign.center)),
                 SizedBox(
-                    width: 26, child: Text('SG', style: _hStyle, textAlign: TextAlign.center)),
+                    width: 26,
+                    child: Text('SG', style: _hStyle, textAlign: TextAlign.center)),
                 SizedBox(
-                    width: 30, child: Text('PTS', style: _hStyle, textAlign: TextAlign.center)),
+                    width: 30,
+                    child:
+                        Text('PTS', style: _hStyle, textAlign: TextAlign.center)),
               ],
             ),
           ),
@@ -174,7 +217,7 @@ class _TableScreenState extends State<TableScreen> with SingleTickerProviderStat
             padding: const EdgeInsets.all(14),
             child: Row(
               children: const [
-                _Legend(color: AppColors.primary, text: 'Zona juara'),
+                _Legend(color: AppColors.primary, text: 'Zona Kontinental'),
                 SizedBox(width: 14),
                 _Legend(color: AppColors.danger, text: 'Degradasi'),
               ],
@@ -185,30 +228,208 @@ class _TableScreenState extends State<TableScreen> with SingleTickerProviderStat
     );
   }
 
-  Widget _scorersView() {
-    if (scorers.isEmpty) {
-      return const EmptyState(
-          icon: Icons.sports_soccer, text: 'Belum ada gol musim ini.');
+  Widget _bracketView(
+      List<Map<String, dynamic>> matches, String emptyTitle, Color accent) {
+    if (matches.isEmpty) {
+      return EmptyState(
+          icon: Icons.emoji_events_outlined,
+          text: 'Belum ada jadwal $emptyTitle musim ini.');
     }
-    return ListView.separated(
-      itemCount: scorers.length,
-      separatorBuilder: (_, __) => const Divider(height: 1, indent: 16, endIndent: 16),
-      itemBuilder: (context, i) {
-        final p = scorers[i]['player'] as Player;
-        return ListTile(
-          leading: CircleAvatar(
-            radius: 16,
-            backgroundColor: AppColors.surface2,
-            child: Text('${i + 1}',
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
-          ),
-          title: Text(p.nombre, style: const TextStyle(fontSize: 13.5)),
-          subtitle: Text('${Squads.positionName(p.posid)} · ${p.edad} th',
-              style: const TextStyle(fontSize: 11, color: AppColors.muted)),
-          trailing: Text('${scorers[i]['goals']}',
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
-        );
-      },
+    final byFase = <int, List<Map<String, dynamic>>>{};
+    for (final m in matches) {
+      final f = (m['par_fase'] as int?) ?? 1;
+      byFase.putIfAbsent(f, () => []).add(m);
+    }
+    final fases = byFase.keys.toList()..sort((a, b) => b.compareTo(a));
+    String phaseName(int f) {
+      switch (f) {
+        case 4:
+          return 'FINAL';
+        case 3:
+          return 'SEMIFINAL';
+        case 2:
+          return 'PEREMPAT FINAL';
+        default:
+          return '16 BESAR';
+      }
+    }
+
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(14, 10, 14, 24),
+        children: [
+          for (final f in fases) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                children: [
+                  Icon(Icons.emoji_events, size: 15, color: accent),
+                  const SizedBox(width: 6),
+                  Text(phaseName(f),
+                      style: TextStyle(
+                          fontSize: 12,
+                          letterSpacing: 1,
+                          fontWeight: FontWeight.w900,
+                          color: accent)),
+                ],
+              ),
+            ),
+            ...byFase[f]!.map((m) {
+              final h = teamCache[m['par_equid_local'] as int];
+              final a = teamCache[m['par_equid_visita'] as int];
+              final played = (m['par_status'] as int? ?? 0) == 1;
+              final hg = m['par_goles_local'] as int? ?? 0;
+              final ag = m['par_goles_visita'] as int? ?? 0;
+              final ph = m['par_penal_goles_local'] as int?;
+              final pa = m['par_penal_goles_visita'] as int?;
+              final isUser = m['par_equid_local'] == userEquid ||
+                  m['par_equid_visita'] == userEquid;
+              return Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(
+                      color: isUser
+                          ? accent.withOpacity(0.6)
+                          : AppColors.line),
+                ),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  child: Row(
+                    children: [
+                      if (h != null)
+                        CrestWidget(
+                            nombre: h.nombre, colorA: h.colorA, size: 22),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(h?.nombre ?? 'Klub',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: m['par_equid_local'] == userEquid
+                                    ? FontWeight.w900
+                                    : FontWeight.w600)),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.surface2,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Column(
+                          children: [
+                            Text(played ? '$hg - $ag' : 'J${m['par_jornada']}',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w900,
+                                    color: played
+                                        ? AppColors.text
+                                        : AppColors.muted)),
+                            if (played && ph != null && pa != null)
+                              Text('($ph-$pa)',
+                                  style: TextStyle(
+                                      fontSize: 9.5,
+                                      fontWeight: FontWeight.w700,
+                                      color: accent)),
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(a?.nombre ?? 'Klub',
+                            textAlign: TextAlign.end,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: m['par_equid_visita'] == userEquid
+                                    ? FontWeight.w900
+                                    : FontWeight.w600)),
+                      ),
+                      const SizedBox(width: 6),
+                      if (a != null)
+                        CrestWidget(
+                            nombre: a.nombre, colorA: a.colorA, size: 22),
+                    ],
+                  ),
+                ),
+              );
+            }),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _statsView() {
+    if (scorers.isEmpty && assisters.isEmpty) {
+      return const EmptyState(
+          icon: Icons.sports_soccer, text: 'Belum ada gol atau assist musim ini.');
+    }
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 24),
+      children: [
+        const SectionTitle('Top Skor'),
+        if (scorers.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            child: Text('Belum ada gol.', style: TextStyle(color: AppColors.muted)),
+          )
+        else
+          ...scorers.take(10).toList().asMap().entries.map((e) {
+            final p = e.value['player'] as Player;
+            return ListTile(
+              dense: true,
+              leading: CircleAvatar(
+                radius: 14,
+                backgroundColor: AppColors.surface2,
+                child: Text('${e.key + 1}',
+                    style: const TextStyle(
+                        fontSize: 11, fontWeight: FontWeight.w800)),
+              ),
+              title: Text(p.nombre, style: const TextStyle(fontSize: 13.5)),
+              subtitle: Text('${Squads.positionName(p.posid)} · ${p.edad} th',
+                  style: const TextStyle(fontSize: 11, color: AppColors.muted)),
+              trailing: Text('${e.value['goals']}',
+                  style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                      color: AppColors.primary)),
+            );
+          }),
+        const SectionTitle('Top Assist'),
+        if (assisters.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            child:
+                Text('Belum ada assist.', style: TextStyle(color: AppColors.muted)),
+          )
+        else
+          ...assisters.take(10).toList().asMap().entries.map((e) {
+            final p = e.value['player'] as Player;
+            return ListTile(
+              dense: true,
+              leading: CircleAvatar(
+                radius: 14,
+                backgroundColor: AppColors.surface2,
+                child: Text('${e.key + 1}',
+                    style: const TextStyle(
+                        fontSize: 11, fontWeight: FontWeight.w800)),
+              ),
+              title: Text(p.nombre, style: const TextStyle(fontSize: 13.5)),
+              subtitle: Text('${Squads.positionName(p.posid)} · ${p.edad} th',
+                  style: const TextStyle(fontSize: 11, color: AppColors.muted)),
+              trailing: Text('${e.value['assists']}',
+                  style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                      color: AppColors.accent)),
+            );
+          }),
+      ],
     );
   }
 
@@ -226,23 +447,35 @@ class _TableScreenState extends State<TableScreen> with SingleTickerProviderStat
           itemBuilder: (context, i) {
             final f = list[i];
             final isHome = f['par_equid_local'] == userEquid;
-            final isCup = (f['par_vuelta'] as int? ?? 0) == 1;
+            final vuelta = f['par_vuelta'] as int? ?? 0;
+            final isCup = vuelta == 1;
+            final isConti = vuelta == 2;
             final played = (f['par_status'] as int? ?? 0) == 1;
             return FutureBuilder(
-              future: widget.service.world
-                  .team((isHome ? f['par_equid_visita'] : f['par_equid_local']) as int),
+              future: widget.service.world.team(
+                  (isHome ? f['par_equid_visita'] : f['par_equid_local']) as int),
               builder: (context, s) {
                 final rival = s.data;
                 return ListTile(
                   dense: true,
                   leading: SizedBox(
-                      width: 38,
+                      width: 42,
                       child: Text(
-                          isCup ? 'PIALA' : 'J${f['par_jornada']}',
+                          isConti
+                              ? 'KONTI'
+                              : isCup
+                                  ? 'PIALA'
+                                  : 'J${f['par_jornada']}',
                           style: TextStyle(
                               fontSize: 10.5,
-                              fontWeight: isCup ? FontWeight.w800 : FontWeight.w500,
-                              color: isCup ? AppColors.gold : AppColors.muted))),
+                              fontWeight: (isCup || isConti)
+                                  ? FontWeight.w800
+                                  : FontWeight.w500,
+                              color: isConti
+                                  ? const Color(0xFF4FC3F7)
+                                  : isCup
+                                      ? AppColors.gold
+                                      : AppColors.muted))),
                   title: Text(
                       rival == null
                           ? '...'
@@ -343,7 +576,8 @@ class _TableScreenState extends State<TableScreen> with SingleTickerProviderStat
   }
 }
 
-const _hStyle = TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: AppColors.muted);
+const _hStyle =
+    TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: AppColors.muted);
 
 class _Legend extends StatelessWidget {
   final Color color;
@@ -358,7 +592,8 @@ class _Legend extends StatelessWidget {
             height: 8,
             decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
         const SizedBox(width: 5),
-        Text(text, style: const TextStyle(fontSize: 10.5, color: AppColors.muted)),
+        Text(text,
+            style: const TextStyle(fontSize: 10.5, color: AppColors.muted)),
       ],
     );
   }

@@ -8,6 +8,7 @@ import 'menu_screen.dart';
 import 'inbox_screen.dart';
 import 'tactics_screen.dart';
 import 'club_pages.dart';
+import 'academy_screen.dart';
 
 class ClubScreen extends StatefulWidget {
   final GameService service;
@@ -243,6 +244,17 @@ class _ClubScreenState extends State<ClubScreen> {
                       _stat('Pekan', '$week/$totalWeeks'),
                     ],
                   ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      _barMini(
+                          'Moral Tim',
+                          st['morale'] != null ? st.i('morale') : 70,
+                          AppColors.primary),
+                      const SizedBox(width: 12),
+                      _barMini('Direksi', st.i('confidence'), AppColors.accent),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -307,7 +319,10 @@ class _ClubScreenState extends State<ClubScreen> {
                       () => _push(StadiumScreen(service: widget.service))),
                   _tile(Icons.savings, 'Finansial', 'Tiket & sponsor',
                       () => _push(FinanceScreen(service: widget.service))),
-                  _tile(Icons.emoji_events, 'Sejarah',
+                  _tile(Icons.school, 'Akademi',
+                      'Lv ${st.i('academy_level') > 0 ? st.i('academy_level') : 1} Wonderkid',
+                      () => _push(AcademyScreen(service: widget.service))),
+                  _tile(Icons.emoji_events, 'Karier',
                       '${st.i('trophies')} trofi',
                       () => _push(HistoryScreen(service: widget.service))),
                   _tile(Icons.mail_outline, 'Pesan', '${data!['unread']} baru',
@@ -390,6 +405,37 @@ class _ClubScreenState extends State<ClubScreen> {
       );
 
   Widget _divider() => Container(width: 1, height: 26, color: AppColors.line);
+
+  Widget _barMini(String label, int val, Color color) => Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(label,
+                    style:
+                        const TextStyle(fontSize: 10, color: AppColors.muted)),
+                const Spacer(),
+                Text('$val%',
+                    style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        color: color)),
+              ],
+            ),
+            const SizedBox(height: 3),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: LinearProgressIndicator(
+                value: (val / 100).clamp(0.0, 1.0),
+                minHeight: 4,
+                backgroundColor: AppColors.surface2,
+                valueColor: AlwaysStoppedAnimation(color),
+              ),
+            ),
+          ],
+        ),
+      );
 
   Widget _tile(IconData icon, String title, String sub, VoidCallback onTap) {
     return InkWell(
@@ -493,20 +539,36 @@ class _ClubScreenState extends State<ClubScreen> {
 
   Widget _nextMatchCard(Map<String, dynamic> next, Team team) {
     final isHome = next['par_equid_local'] == team.equid;
-    final isCup = (next['par_vuelta'] as int? ?? 0) == 1;
+    final vuelta = next['par_vuelta'] as int? ?? 0;
+    final isCup = vuelta == 1;
+    final isConti = vuelta == 2;
     final rivalId = isHome ? next['par_equid_visita'] : next['par_equid_local'];
     return FutureBuilder(
       future: widget.service.world.team(rivalId as int),
       builder: (context, snap) {
         final rival = snap.data;
+        final borderColor = isConti
+            ? const Color(0xFF4FC3F7).withOpacity(0.55)
+            : isCup
+                ? AppColors.gold.withOpacity(0.5)
+                : AppColors.line;
+        final label = isConti
+            ? 'PIALA KONTINENTAL'
+            : isCup
+                ? 'PIALA DOMESTIK'
+                : 'LAGA BERIKUTNYA';
+        final labelColor = isConti
+            ? const Color(0xFF4FC3F7)
+            : isCup
+                ? AppColors.gold
+                : AppColors.muted;
         return Container(
           margin: const EdgeInsets.fromLTRB(14, 14, 14, 0),
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             color: AppColors.surface,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-                color: isCup ? AppColors.gold.withOpacity(0.5) : AppColors.line),
+            border: Border.all(color: borderColor),
           ),
           child: Row(
             children: [
@@ -514,12 +576,12 @@ class _ClubScreenState extends State<ClubScreen> {
                 child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(isCup ? 'PIALA DOMESTIK' : 'LAGA BERIKUTNYA',
+                  Text(label,
                       style: TextStyle(
                           fontSize: 9,
                           letterSpacing: 1,
                           fontWeight: FontWeight.w800,
-                          color: isCup ? AppColors.gold : AppColors.muted)),
+                          color: labelColor)),
                   const SizedBox(height: 6),
                   Text(
                       rival == null

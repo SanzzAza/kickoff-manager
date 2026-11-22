@@ -25,6 +25,7 @@ class MatchSimScreen extends StatefulWidget {
 
 class _MatchSimScreenState extends State<MatchSimScreen> {
   Map<String, dynamic>? fixture;
+  Map<String, dynamic>? scout;
   Team? home;
   Team? away;
   Team? userTeam;
@@ -74,6 +75,7 @@ class _MatchSimScreenState extends State<MatchSimScreen> {
     setState(() {
       userTeam = t;
       fixture = f;
+      scout = null;
       home = null;
       away = null;
       session = null;
@@ -90,29 +92,37 @@ class _MatchSimScreenState extends State<MatchSimScreen> {
       ballY = 0.5;
     });
     if (f != null) {
-      final h = await widget.service.world.team(f['par_equid_local'] as int);
-      final a = await widget.service.world.team(f['par_equid_visita'] as int);
+      final hId = f['par_equid_local'] as int;
+      final aId = f['par_equid_visita'] as int;
+      final h = await widget.service.world.team(hId);
+      final a = await widget.service.world.team(aId);
+      final oppId = hId == t.equid ? aId : hId;
+      final sc = await widget.service.scoutReportFor(oppId);
       if (!mounted) return;
       setState(() {
         home = h;
         away = a;
+        scout = sc;
       });
     }
   }
 
   bool get _isCup => (fixture?['par_vuelta'] as int? ?? 0) == 1;
+  bool get _isConti => (fixture?['par_vuelta'] as int? ?? 0) == 2;
+  bool get _isKnockout => _isCup || _isConti;
 
   String _cupPhaseLabel() {
     final fase = fixture?['par_fase'] as int? ?? 1;
+    final prefix = _isConti ? 'PIALA KONTINENTAL' : 'PIALA DOMESTIK';
     switch (fase) {
       case 1:
-        return 'PIALA DOMESTIK · 16 BESAR';
+        return '$prefix · 16 BESAR';
       case 2:
-        return 'PIALA DOMESTIK · PEREMPAT FINAL';
+        return '$prefix · PEREMPAT FINAL';
       case 3:
-        return 'PIALA DOMESTIK · SEMIFINAL';
+        return '$prefix · SEMIFINAL';
       default:
-        return 'FINAL PIALA DOMESTIK';
+        return 'FINAL $prefix';
     }
   }
 
@@ -138,7 +148,7 @@ class _MatchSimScreenState extends State<MatchSimScreen> {
     try {
       final s = await widget.service.startLiveUserMatch(
         fixture!['partid'] as int,
-        needWinner: _isCup,
+        needWinner: _isKnockout,
       );
       if (!mounted) return;
       session = s;
@@ -425,28 +435,38 @@ class _MatchSimScreenState extends State<MatchSimScreen> {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-            colors: _isCup
-                ? const [Color(0xFF3E2D0C), Color(0xFF1A170D)]
-                : const [Color(0xFF0E3B27), Color(0xFF102019)],
+            colors: _isConti
+                ? const [Color(0xFF0D2D45), Color(0xFF101926)]
+                : _isCup
+                    ? const [Color(0xFF3E2D0C), Color(0xFF1A170D)]
+                    : const [Color(0xFF0E3B27), Color(0xFF102019)],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter),
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
-            color: _isCup ? AppColors.gold.withOpacity(0.5) : AppColors.line),
+            color: _isConti
+                ? const Color(0xFF4FC3F7).withOpacity(0.55)
+                : _isCup
+                    ? AppColors.gold.withOpacity(0.5)
+                    : AppColors.line),
       ),
       child: Column(
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              if (_isCup)
-                const Padding(
-                  padding: EdgeInsets.only(right: 5),
-                  child: Icon(Icons.emoji_events, size: 13, color: AppColors.gold),
+              if (_isKnockout)
+                Padding(
+                  padding: const EdgeInsets.only(right: 5),
+                  child: Icon(Icons.emoji_events,
+                      size: 13,
+                      color: _isConti
+                          ? const Color(0xFF4FC3F7)
+                          : AppColors.gold),
                 ),
               Text(
                   session == null && result == null
-                      ? (_isCup
+                      ? (_isKnockout
                           ? _cupPhaseLabel()
                           : 'PEKAN ${fixture!['par_jornada']}')
                       : done
@@ -462,9 +482,11 @@ class _MatchSimScreenState extends State<MatchSimScreen> {
                           ? AppColors.muted
                           : paused
                               ? AppColors.accent
-                              : _isCup && session == null
-                                  ? AppColors.gold
-                                  : AppColors.primary)),
+                              : _isConti && session == null
+                                  ? const Color(0xFF4FC3F7)
+                                  : _isCup && session == null
+                                      ? AppColors.gold
+                                      : AppColors.primary)),
             ],
           ),
           const SizedBox(height: 12),
@@ -593,70 +615,146 @@ class _MatchSimScreenState extends State<MatchSimScreen> {
       );
 
   Widget _preMatch() {
+    final form = (scout?['form'] as List<String>?) ?? const [];
+    final keys = (scout?['keyPlayers'] as List<Player>?) ?? const [];
     return Expanded(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        child: Column(
-          children: [
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(14, 0, 14, 24),
+        children: [
+          if (scout != null && scout!.isNotEmpty)
             Card(
+              margin: const EdgeInsets.only(bottom: 10),
               child: Padding(
                 padding: const EdgeInsets.all(14),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                        _isCup
-                            ? 'Laga Sistem Gugur (Adu Penalti bila seri)'
-                            : 'Rencana pertandingan',
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w800, fontSize: 13)),
-                    const SizedBox(height: 8),
-                    const Text(
-                        'Saat laga berlangsung, kamu bisa mengganti pemain '
-                        '(maks 5) dan mengubah taktik secara langsung.',
-                        style: TextStyle(fontSize: 12, color: AppColors.muted)),
+                    Row(
+                      children: [
+                        const Icon(Icons.analytics_outlined,
+                            size: 16, color: AppColors.accent),
+                        const SizedBox(width: 6),
+                        const Text('Laporan Intai Lawan',
+                            style: TextStyle(
+                                fontWeight: FontWeight.w800, fontSize: 13)),
+                        const Spacer(),
+                        if (scout!['rank'] != null)
+                          Text('Peringkat ${scout!['rank']}',
+                              style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.muted)),
+                      ],
+                    ),
                     const SizedBox(height: 10),
                     Row(
                       children: [
-                        OutlinedButton.icon(
-                          onPressed: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (_) =>
-                                      TacticsScreen(service: widget.service))),
-                          icon: const Icon(Icons.psychology, size: 16),
-                          label: const Text('Ubah taktik'),
-                        ),
+                        _miniStat('${scout!['atk']}', 'Serang'),
+                        _miniStat('${scout!['mid']}', 'Tengah'),
+                        _miniStat('${scout!['def']}', 'Bertahan'),
                       ],
                     ),
+                    if (form.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          const Text('5 laga terakhir: ',
+                              style: TextStyle(
+                                  fontSize: 11, color: AppColors.muted)),
+                          ...form.map((f) => Container(
+                                margin: const EdgeInsets.only(right: 4),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: f == 'M'
+                                      ? AppColors.primary.withOpacity(0.2)
+                                      : f == 'S'
+                                          ? AppColors.accent.withOpacity(0.2)
+                                          : AppColors.danger.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(f,
+                                    style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w800,
+                                        color: f == 'M'
+                                            ? AppColors.primary
+                                            : f == 'S'
+                                                ? AppColors.accent
+                                                : AppColors.danger)),
+                              )),
+                        ],
+                      ),
+                    ],
+                    if (keys.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Waspadai: ${keys.map((p) => "${p.nombre} (${p.poder})").join(", ")}',
+                        style: const TextStyle(
+                            fontSize: 11, color: AppColors.muted),
+                      ),
+                    ],
                   ],
                 ),
               ),
             ),
-            const Spacer(),
-            ElevatedButton.icon(
-              onPressed: playing ? null : _startMatch,
-              icon: const Icon(Icons.play_arrow_rounded),
-              label: const Text('KICK OFF'),
-              style: ElevatedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(54)),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                      _isKnockout
+                          ? 'Laga Sistem Gugur (Adu Penalti bila seri)'
+                          : 'Rencana pertandingan',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w800, fontSize: 13)),
+                  const SizedBox(height: 8),
+                  const Text(
+                      'Saat laga berlangsung, kamu bisa mengganti pemain '
+                      '(maks 5) dan mengubah taktik secara langsung.',
+                      style: TextStyle(fontSize: 12, color: AppColors.muted)),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) =>
+                                    TacticsScreen(service: widget.service))),
+                        icon: const Icon(Icons.psychology, size: 16),
+                        label: const Text('Ubah taktik'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 10),
-            OutlinedButton.icon(
-              onPressed: playing
-                  ? null
-                  : () {
-                      setState(() => fast = true);
-                      _startMatch();
-                    },
-              icon: const Icon(Icons.bolt, size: 18),
-              label: const Text('Simulasi instan'),
-              style: OutlinedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(46)),
-            ),
-            const SizedBox(height: 24),
-          ],
-        ),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            onPressed: playing ? null : _startMatch,
+            icon: const Icon(Icons.play_arrow_rounded),
+            label: const Text('KICK OFF'),
+            style: ElevatedButton.styleFrom(
+                minimumSize: const Size.fromHeight(54)),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: playing
+                ? null
+                : () {
+                    setState(() => fast = true);
+                    _startMatch();
+                  },
+            icon: const Icon(Icons.bolt, size: 18),
+            label: const Text('Simulasi instan'),
+            style: OutlinedButton.styleFrom(
+                minimumSize: const Size.fromHeight(46)),
+          ),
+        ],
       ),
     );
   }

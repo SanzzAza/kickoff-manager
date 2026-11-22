@@ -321,6 +321,52 @@ class World {
     };
   }
 
+  Future<List<Player>> topAssisters(int tempid, {int limit = 15}) async {
+    final rows = await db.rawQuery('''
+      SELECT j.*, s.js_asistencias as a FROM jus_stats s
+      JOIN jug_jugadores j ON j.jugid = s.js_jugid
+      WHERE s.js_tempid = ? AND s.js_asistencias > 0
+      ORDER BY s.js_asistencias DESC LIMIT ?
+    ''', [tempid, limit]);
+    return rows.map(playerFromRow).toList();
+  }
+
+  Future<Map<int, int>> assisterCounts(int tempid) async {
+    final rows = await db.query('jus_stats',
+        where: 'js_tempid = ?', whereArgs: [tempid]);
+    return {
+      for (final r in rows)
+        r['js_jugid'] as int: (r['js_asistencias'] ?? 0) as int
+    };
+  }
+
+  Future<List<Map<String, dynamic>>> cupFixtures(int tempid,
+      {int vuelta = 1}) async {
+    return db.query('tor_partidos',
+        where: 'par_tempid = ? AND par_vuelta = ?',
+        whereArgs: [tempid, vuelta],
+        orderBy: 'par_fase DESC, partid ASC');
+  }
+
+  Future<List<String>> recentForm(int equid, int tempid, {int limit = 5}) async {
+    final rows = await db.query(
+      'tor_partidos',
+      where:
+          'par_tempid = ? AND par_status = 1 AND (par_equid_local = ? OR par_equid_visita = ?)',
+      whereArgs: [tempid, equid, equid],
+      orderBy: 'par_jornada DESC, partid DESC',
+      limit: limit,
+    );
+    final out = <String>[];
+    for (final r in rows.reversed) {
+      final isHome = r['par_equid_local'] == equid;
+      final gf = (isHome ? r['par_goles_local'] : r['par_goles_visita']) as int;
+      final ga = (isHome ? r['par_goles_visita'] : r['par_goles_local']) as int;
+      out.add(gf > ga ? 'M' : (gf == ga ? 'S' : 'K'));
+    }
+    return out;
+  }
+
   Future<List<Map<String, dynamic>>> messages({int limit = 50}) async {
     return db.query('mensajes', orderBy: 'msg_id DESC', limit: limit);
   }
