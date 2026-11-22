@@ -4,7 +4,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:kickoff_manager/db/db.dart';
 import 'package:kickoff_manager/engine/game_service.dart';
-import 'package:kickoff_manager/engine/match_engine.dart';
 import 'package:kickoff_manager/models/models.dart';
 import 'package:kickoff_manager/ui/theme.dart';
 import 'package:kickoff_manager/ui/screens/new_game_screen.dart';

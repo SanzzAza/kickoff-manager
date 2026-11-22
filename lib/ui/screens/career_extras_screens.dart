@@ -491,7 +491,7 @@ class _ClubEditorScreenState extends State<ClubEditorScreen> {
                   items: positions
                       .map((pos) => DropdownMenuItem(
                             value: pos.id,
-                            child: Text('${pos.abrev} - ${pos.nombre}'),
+                            child: Text('${pos.abrev} - ${pos.name}'),
                           ))
                       .toList(),
                   onChanged: (v) => setD(() => posid = v ?? posid),
