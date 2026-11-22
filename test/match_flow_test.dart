@@ -68,8 +68,10 @@ void main() {
     // Pastikan KICK OFF untuk laga berikutnya tetap aktif (tidak terkunci)
     await t.ensureVisible(find.text('Simulasi instan'));
     await t.tap(find.text('Simulasi instan'));
-    await t.runAsync(() => Future.delayed(const Duration(milliseconds: 600)));
-    await t.pump();
+    for (var i = 0; i < 15 && find.text('PERTANDINGAN SELESAI').evaluate().isEmpty; i++) {
+      await t.runAsync(() => Future.delayed(const Duration(milliseconds: 300)));
+      await t.pump();
+    }
     expect(find.text('PERTANDINGAN SELESAI'), findsOneWidget);
     expect(t.takeException(), isNull);
   }, timeout: const Timeout(Duration(minutes: 6)));
