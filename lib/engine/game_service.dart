@@ -169,7 +169,7 @@ class GameService {
     List<int> contiTeams = [];
     int? toridConti;
     if (userQualifiesConti) {
-      toridConti = await _continentalTorneoId(liga.confed);
+      toridConti = await _continentalTorneoId(liga.confederation);
       final foreignRows = await db.rawQuery('''
         SELECT e.equid FROM eq_equipos e
         JOIN paises p ON p.paid = e.equi_paid
@@ -1893,8 +1893,11 @@ class GameService {
       final edad = 21 + rng.nextInt(11);
       final poder = 58 + rng.nextInt(16);
       final pot = (poder + rng.nextInt(10)).clamp(poder, 88);
-      final fn = firstNames[rng.nextInt(firstNames.length)];
-      final ln = lastNames[rng.nextInt(lastNames.length)];
+      final liga = leagues.firstWhere((l) => l.name == st['league'],
+          orElse: () => leagues.first);
+      final cn = names[liga.iso] ?? names.values.first;
+      final fn = cn.first[rng.nextInt(cn.first.length)];
+      final ln = cn.last[rng.nextInt(cn.last.length)];
       final name = '$fn $ln';
       final gk = pos.id == 1 ? poder : 25 + rng.nextInt(20);
       await db.insert('jug_jugadores', {
@@ -2002,8 +2005,11 @@ class GameService {
       final edad = 16 + rng.nextInt(3);
       final poder = (52 + level * 2 + rng.nextInt(8)).clamp(50, 74);
       final pot = (76 + level * 3 + rng.nextInt(7)).clamp(78, 95);
-      final fn = firstNames[rng.nextInt(firstNames.length)];
-      final ln = lastNames[rng.nextInt(lastNames.length)];
+      final liga = leagues.firstWhere((l) => l.name == st['league'],
+          orElse: () => leagues.first);
+      final cn = names[liga.iso] ?? names.values.first;
+      final fn = cn.first[rng.nextInt(cn.first.length)];
+      final ln = cn.last[rng.nextInt(cn.last.length)];
       list.add({
         'nombre': '$fn $ln',
         'edad': edad,
