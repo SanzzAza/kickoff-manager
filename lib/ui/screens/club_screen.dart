@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../engine/game_service.dart';
 import '../../models/models.dart';
@@ -11,7 +12,15 @@ import 'club_pages.dart';
 class ClubScreen extends StatefulWidget {
   final GameService service;
   final ValueChanged<int> onNavigate;
-  const ClubScreen({super.key, required this.service, required this.onNavigate});
+  final ValueListenable<int>? refreshSignal;
+  final VoidCallback? onDataChanged;
+  const ClubScreen({
+    super.key,
+    required this.service,
+    required this.onNavigate,
+    this.refreshSignal,
+    this.onDataChanged,
+  });
   @override
   State<ClubScreen> createState() => _ClubScreenState();
 }
@@ -23,7 +32,18 @@ class _ClubScreenState extends State<ClubScreen> {
   @override
   void initState() {
     super.initState();
+    widget.refreshSignal?.addListener(_onSignal);
     _load();
+  }
+
+  @override
+  void dispose() {
+    widget.refreshSignal?.removeListener(_onSignal);
+    super.dispose();
+  }
+
+  void _onSignal() {
+    if (mounted) _load();
   }
 
   Future<void> _load() async {
@@ -58,6 +78,7 @@ class _ClubScreenState extends State<ClubScreen> {
     await widget.service.trainWeek();
     setState(() => busy = false);
     await _load();
+    widget.onDataChanged?.call();
     if (!mounted) return;
     if (summary.userMatch != null) {
       final go = await showDialog<bool>(
@@ -87,7 +108,8 @@ class _ClubScreenState extends State<ClubScreen> {
         context,
         MaterialPageRoute(
             builder: (_) => SeasonEndScreen(service: widget.service, info: info)));
-    _load();
+    await _load();
+    widget.onDataChanged?.call();
   }
 
   @override
@@ -292,20 +314,27 @@ class _ClubScreenState extends State<ClubScreen> {
 
             SectionTitle(
               'Lanjutkan',
-              trailing: Text('Pekan ${week + 1} dari $totalWeeks',
+              trailing: Text(
+                  finished
+                      ? 'Semua pekan selesai'
+                      : 'Pekan ${week + 1} dari $totalWeeks',
                   style: const TextStyle(fontSize: 11, color: AppColors.muted)),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14),
               child: ElevatedButton.icon(
-                onPressed: busy ? null : _simulateWeek,
+                onPressed: (busy || finished) ? null : _simulateWeek,
                 icon: busy
                     ? const SizedBox(
                         height: 16,
                         width: 16,
                         child: CircularProgressIndicator(strokeWidth: 2))
                     : const Icon(Icons.fast_forward),
-                label: Text(busy ? 'Memproses pekan...' : 'SELESAIKAN PEKAN INI'),
+                label: Text(busy
+                    ? 'Memproses pekan...'
+                    : finished
+                        ? 'MUSIM SELESAI (TUTUP MUSIM DI ATAS)'
+                        : 'SELESAIKAN PEKAN INI'),
               ),
             ),
             const SizedBox(height: 8),

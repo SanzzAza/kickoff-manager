@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../engine/game_service.dart';
 import '../theme.dart';
@@ -6,7 +7,8 @@ import 'squad_screen.dart';
 
 class MarketScreen extends StatefulWidget {
   final GameService service;
-  const MarketScreen({super.key, required this.service});
+  final ValueListenable<int>? refreshSignal;
+  const MarketScreen({super.key, required this.service, this.refreshSignal});
   @override
   State<MarketScreen> createState() => _MarketScreenState();
 }
@@ -23,7 +25,19 @@ class _MarketScreenState extends State<MarketScreen> {
   @override
   void initState() {
     super.initState();
+    widget.refreshSignal?.addListener(_onSignal);
     _load();
+  }
+
+  @override
+  void dispose() {
+    widget.refreshSignal?.removeListener(_onSignal);
+    search.dispose();
+    super.dispose();
+  }
+
+  void _onSignal() {
+    if (mounted) _load();
   }
 
   Future<void> _load() async {

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../engine/game_service.dart';
 import '../../models/models.dart';
@@ -6,7 +7,8 @@ import '../widgets.dart';
 
 class TableScreen extends StatefulWidget {
   final GameService service;
-  const TableScreen({super.key, required this.service});
+  final ValueListenable<int>? refreshSignal;
+  const TableScreen({super.key, required this.service, this.refreshSignal});
   @override
   State<TableScreen> createState() => _TableScreenState();
 }
@@ -22,7 +24,19 @@ class _TableScreenState extends State<TableScreen> with SingleTickerProviderStat
   void initState() {
     super.initState();
     tab = TabController(length: 3, vsync: this);
+    widget.refreshSignal?.addListener(_onSignal);
     _load();
+  }
+
+  @override
+  void dispose() {
+    widget.refreshSignal?.removeListener(_onSignal);
+    tab.dispose();
+    super.dispose();
+  }
+
+  void _onSignal() {
+    if (mounted) _load();
   }
 
   Future<void> _load() async {
@@ -118,7 +132,11 @@ class _TableScreenState extends State<TableScreen> with SingleTickerProviderStat
                   SizedBox(
                       width: 34,
                       child: Center(
-                          child: CrestWidget(nombre: r.nombre, size: 22))),
+                          child: CrestWidget(
+                              nombre: r.nombre,
+                              colorA: r.colorA,
+                              colorB: r.colorB,
+                              size: 22))),
                   Expanded(
                     child: Text(r.nombre,
                         maxLines: 1,

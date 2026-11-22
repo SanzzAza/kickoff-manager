@@ -288,10 +288,10 @@ class WorldGenerator {
 
   /// Dipakai saat regenerasi skuad (pemain pensiun / klub kekurangan pemain).
   Future<void> fillSquad(int equid, int clubPoder) async {
-    final cur = await db.rawQuery(
+    final cur = await ex.rawQuery(
         'SELECT COUNT(*) c FROM eq_equipos_jugadores WHERE eqju_equid = ?', [equid]);
     var count = (cur.first['c'] as int?) ?? 0;
-    final maxRow = await db.rawQuery('SELECT MAX(jugid) m FROM jug_jugadores');
+    final maxRow = await ex.rawQuery('SELECT MAX(jugid) m FROM jug_jugadores');
     var nextId = ((maxRow.first['m'] as int?) ?? 0) + 1;
     var slot = count;
     while (count < 22) {

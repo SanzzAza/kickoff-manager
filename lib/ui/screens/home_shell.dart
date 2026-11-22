@@ -16,15 +16,40 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   int index = 0;
+  final ValueNotifier<int> _refreshSignal = ValueNotifier<int>(0);
+
+  @override
+  void dispose() {
+    _refreshSignal.dispose();
+    super.dispose();
+  }
+
+  void _triggerRefresh() {
+    _refreshSignal.value++;
+  }
+
+  void _selectTab(int i) {
+    setState(() => index = i);
+    _triggerRefresh();
+  }
 
   @override
   Widget build(BuildContext context) {
     final pages = [
-      ClubScreen(service: widget.service, onNavigate: (i) => setState(() => index = i)),
-      SquadScreen(service: widget.service),
-      MatchSimScreen(service: widget.service),
-      TableScreen(service: widget.service),
-      MarketScreen(service: widget.service),
+      ClubScreen(
+        service: widget.service,
+        onNavigate: _selectTab,
+        refreshSignal: _refreshSignal,
+        onDataChanged: _triggerRefresh,
+      ),
+      SquadScreen(service: widget.service, refreshSignal: _refreshSignal),
+      MatchSimScreen(
+        service: widget.service,
+        refreshSignal: _refreshSignal,
+        onMatchFinished: _triggerRefresh,
+      ),
+      TableScreen(service: widget.service, refreshSignal: _refreshSignal),
+      MarketScreen(service: widget.service, refreshSignal: _refreshSignal),
     ];
     return Scaffold(
       body: IndexedStack(index: index, children: pages),
@@ -32,7 +57,7 @@ class _HomeShellState extends State<HomeShell> {
         selectedIndex: index,
         height: 62,
         backgroundColor: AppColors.surface,
-        onDestinationSelected: (i) => setState(() => index = i),
+        onDestinationSelected: _selectTab,
         destinations: const [
           NavigationDestination(
               icon: Icon(Icons.dashboard_outlined),

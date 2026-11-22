@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../engine/game_service.dart';
 import '../../models/models.dart';
@@ -6,7 +7,8 @@ import '../widgets.dart';
 
 class SquadScreen extends StatefulWidget {
   final GameService service;
-  const SquadScreen({super.key, required this.service});
+  final ValueListenable<int>? refreshSignal;
+  const SquadScreen({super.key, required this.service, this.refreshSignal});
   @override
   State<SquadScreen> createState() => _SquadScreenState();
 }
@@ -19,7 +21,18 @@ class _SquadScreenState extends State<SquadScreen> {
   @override
   void initState() {
     super.initState();
+    widget.refreshSignal?.addListener(_onSignal);
     _load();
+  }
+
+  @override
+  void dispose() {
+    widget.refreshSignal?.removeListener(_onSignal);
+    super.dispose();
+  }
+
+  void _onSignal() {
+    if (mounted) _load();
   }
 
   Future<void> _load() async {

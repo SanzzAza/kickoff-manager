@@ -14,9 +14,12 @@ import 'world_generator.dart';
 class StandingsRow {
   final int equid;
   final String nombre;
+  final String colorA;
+  final String colorB;
   int pj = 0, pg = 0, pe = 0, pp = 0, gf = 0, gc = 0, pts = 0;
   List<String> forma = [];
-  StandingsRow(this.equid, this.nombre);
+  StandingsRow(this.equid, this.nombre,
+      {this.colorA = '#1B5E20', this.colorB = '#FFFFFF'});
   int get dg => gf - gc;
 }
 
@@ -116,58 +119,63 @@ class GameService {
     await world.setInt('week', 0);
     await world.setInt('season_started', 1);
 
-    await db.insert('tor_temporadas', {
-      'tempid': tempid,
-      'tem_nombre': '${liga.name} ${year}/${year + 1}',
-      'tem_anioinicio': year,
-      'tem_aniofin': year + 1,
-    });
-
-    // Tim peserta: klub dengan equi_paid == seed liga ini
     final seedPais = leagues.indexOf(liga) + 1;
+    final toridLiga = await _leagueTorneoId(liga.name);
     final teamRows = await db.query('eq_equipos',
         where: 'equi_paid = ?', whereArgs: [seedPais], orderBy: 'equid');
     final teamIds = teamRows.map((r) => r['equid'] as int).toList();
-    // Reset kekuatan liga
-    await db.update('eq_equipos', {'equi_poder': 0}, where: 'equi_paid = ?', whereArgs: [seedPais]);
+    final powers = <int, int>{};
     for (final id in teamIds) {
-      final power = await _powerForTeam(id, teamIds);
-      await db.update('eq_equipos', {'equi_poder': power, 'equi_pts': 0},
-          where: 'equid = ?', whereArgs: [id]);
-      await db.insert('tor_temporadas_equipos', {
-        'te_equid': id,
-        'te_tempid': tempid,
-        'te_pj': 0,
-        'te_pg': 0,
-        'te_pe': 0,
-        'te_pp': 0,
-        'te_gf': 0,
-        'te_gc': 0,
-        'te_pts': 0,
-        'te_forma': '',
-      });
-      await db.update('jug_jugadores',
-          {'jug_condicion': 100, 'jug_susp': 0, 'jug_lesion': 0},
-          where:
-              'jugid IN (SELECT eqju_jugid FROM eq_equipos_jugadores WHERE eqju_equid = ?)',
-          whereArgs: [id]);
+      powers[id] = await _powerForTeam(id, teamIds);
     }
-
-    // Kalender double round robin
     final fixtures = _roundRobin(teamIds);
-    final toridLiga = await _leagueTorneoId(liga.name);
-    var jornada = 0;
-    for (final round in fixtures) {
-      jornada++;
-      // leg 1
-      for (final m in round) {
-        await _insertFixture(toridLiga, tempid, m[0], m[1], jornada);
+
+    await db.transaction((txn) async {
+      await txn.insert('tor_temporadas', {
+        'tempid': tempid,
+        'tem_nombre': '${liga.name} ${year}/${year + 1}',
+        'tem_anioinicio': year,
+        'tem_aniofin': year + 1,
+      });
+
+      await txn.update('eq_equipos', {'equi_poder': 0},
+          where: 'equi_paid = ?', whereArgs: [seedPais]);
+      for (final id in teamIds) {
+        await txn.update(
+            'eq_equipos', {'equi_poder': powers[id] ?? 50, 'equi_pts': 0},
+            where: 'equid = ?', whereArgs: [id]);
+        await txn.insert('tor_temporadas_equipos', {
+          'te_equid': id,
+          'te_tempid': tempid,
+          'te_pj': 0,
+          'te_pg': 0,
+          'te_pe': 0,
+          'te_pp': 0,
+          'te_gf': 0,
+          'te_gc': 0,
+          'te_pts': 0,
+          'te_forma': '',
+        });
+        await txn.update('jug_jugadores',
+            {'jug_condicion': 100, 'jug_susp': 0, 'jug_lesion': 0},
+            where:
+                'jugid IN (SELECT eqju_jugid FROM eq_equipos_jugadores WHERE eqju_equid = ?)',
+            whereArgs: [id]);
       }
-      // leg 2 (kandang terbalik)
-      for (final m in round) {
-        await _insertFixture(toridLiga, tempid, m[1], m[0], jornada + fixtures.length);
+
+      var jornada = 0;
+      for (final round in fixtures) {
+        jornada++;
+        for (final m in round) {
+          await _insertFixture(toridLiga, tempid, m[0], m[1], jornada, txn: txn);
+        }
+        for (final m in round) {
+          await _insertFixture(
+              toridLiga, tempid, m[1], m[0], jornada + fixtures.length,
+              txn: txn);
+        }
       }
-    }
+    });
     await world.setInt('total_weeks', fixtures.length * 2);
   }
 
@@ -187,8 +195,9 @@ class GameService {
   }
 
   Future<void> _insertFixture(
-      int torid, int tempid, int home, int away, int jornada) async {
-    await db.insert('tor_partidos', {
+      int torid, int tempid, int home, int away, int jornada,
+      {DatabaseExecutor? txn}) async {
+    await (txn ?? db).insert('tor_partidos', {
       'par_torid': torid,
       'par_tempid': tempid,
       'par_estaid': 0,
@@ -366,13 +375,16 @@ class GameService {
   }
 
   /// Selesaikan sisa laga pekan berjalan (setelah laga user dimainkan).
-  Future<List<String>> finishRound() async {
+  Future<List<String>> finishRound({int? playedJornada}) async {
     final st = await world.state();
     final tempid = st.i('tempid');
-    final week = st.i('week');
+    final currentW = st.i('week');
+    final targetWeek = playedJornada != null && playedJornada > currentW
+        ? playedJornada
+        : currentW;
     final pending = await db.query('tor_partidos',
         where: 'par_tempid = ? AND par_status = 0 AND par_jornada <= ?',
-        whereArgs: [tempid, week]);
+        whereArgs: [tempid, targetWeek]);
     final out = <String>[];
     for (final f in pending) {
       final h = (await world.team(f['par_equid_local'] as int))!;
@@ -381,6 +393,12 @@ class GameService {
           await buildSetup(h, Tactics()), await buildSetup(a, Tactics()));
       await _saveResult(f, hg, ag, null);
       out.add('${h.nombre} $hg-$ag ${a.nombre}');
+    }
+    if (targetWeek > currentW) {
+      await world.setInt('week', targetWeek);
+      await _advanceConditions();
+      await refreshPowers();
+      await _weeklyFinances();
     }
     return out;
   }
@@ -628,7 +646,8 @@ class GameService {
     for (final t in teams) {
       final r = rows[t.equid];
       if (r == null) continue;
-      final s = StandingsRow(t.equid, t.nombre);
+      final s = StandingsRow(t.equid, t.nombre,
+          colorA: t.colorA, colorB: t.colorB);
       s.pj = (r['te_pj'] ?? 0) as int;
       s.pg = (r['te_pg'] ?? 0) as int;
       s.pe = (r['te_pe'] ?? 0) as int;
@@ -1006,7 +1025,23 @@ class GameService {
     // PHK bila gagal total, atau tawaran klub lain bila berprestasi
     final sacked = userPos >= table.length - 2 && conf <= 32;
     final offers = <Map<String, dynamic>>[];
-    if (!sacked && userPos <= 4) {
+    if (sacked) {
+      final seed = leagues.indexWhere((l) => l.name == leagueName) + 1;
+      final pool = await db.query('eq_equipos',
+          where: 'equi_paid = ? AND equid != ?',
+          whereArgs: [seed, userEquid],
+          orderBy: 'equi_poder ASC',
+          limit: 3);
+      for (final r in pool) {
+        offers.add({
+          'equid': r['equid'],
+          'nombre': r['equi_nombre'],
+          'poder': r['equi_poder'],
+          'salario': ((r['equi_poder'] as int) * 70000),
+        });
+      }
+      await world.setInt('confidence', 60);
+    } else if (userPos <= 4) {
       final seed = leagues.indexWhere((l) => l.name == leagueName) + 1;
       final pool = await db.query('eq_equipos',
           where: 'equi_paid = ? AND equid != ? AND equi_poder > ?',
@@ -1050,51 +1085,56 @@ class GameService {
   }
 
   Future<void> _agePlayers(int year) async {
-    final rows = await db.query('jug_jugadores');
-    for (final r in rows) {
-      final p = world.playerFromRow(r);
-      final edad = p.edad + 1;
-      if (edad >= 39 && Random().nextDouble() < 0.55) {
-        await db.update('jug_jugadores', {'jug_jstdid': 2, 'jug_titular': 0},
-            where: 'jugid = ?', whereArgs: [p.jugid]);
-        continue;
-      }
-      var poder = p.poder;
-      if (edad <= 24) {
-        poder += Random().nextInt(3);
-      } else if (edad >= 31) {
-        poder -= 1 + Random().nextInt(3);
-      } else {
-        poder += Random().nextInt(2) - 1;
-      }
-      poder = poder.clamp(25, 99);
-      final valor = _valueFor(poder, edad, p.potencial);
-      await db.update(
-          'jug_jugadores',
-          {
-            'jug_edad': edad,
-            'jug_poder': poder,
-            'jug_valor': valor,
-            'jug_condicion': 100,
-            'jug_salario': (valor / 180).round(),
-          },
-          where: 'jugid = ?',
-          whereArgs: [p.jugid]);
-    }
-    // Isi ulang skuad yang kosong dengan pemain muda
+    final rng = Random();
+    final rows = await db.query('jug_jugadores', where: 'jug_jstdid = 1');
     final clubs = await db.query('eq_equipos');
-    for (final c in clubs) {
-      final equid = c['equid'] as int;
-      final count = await db.rawQuery(
-          'SELECT COUNT(*) c FROM eq_equipos_jugadores WHERE eqju_equid = ?', [equid]);
-      if (((count.first['c'] as int?) ?? 0) >= 18) continue;
-      await _fillSquad(equid, c['equi_poder'] as int);
-    }
-  }
+    final gen = WorldGenerator(db, rng);
 
-  Future<void> _fillSquad(int equid, int poder) async {
-    final gen = WorldGenerator(db);
-    await gen.fillSquad(equid, poder);
+    await db.transaction((txn) async {
+      gen.executor = txn;
+      for (final r in rows) {
+        final p = world.playerFromRow(r);
+        final edad = p.edad + 1;
+        if (edad >= 39 && rng.nextDouble() < 0.55) {
+          await txn.update('jug_jugadores', {'jug_jstdid': 2, 'jug_titular': 0},
+              where: 'jugid = ?', whereArgs: [p.jugid]);
+          await txn.delete('eq_equipos_jugadores',
+              where: 'eqju_jugid = ?', whereArgs: [p.jugid]);
+          continue;
+        }
+        var poder = p.poder;
+        if (edad <= 24) {
+          poder += rng.nextInt(3);
+        } else if (edad >= 31) {
+          poder -= 1 + rng.nextInt(3);
+        } else {
+          poder += rng.nextInt(2) - 1;
+        }
+        poder = poder.clamp(25, 99);
+        final valor = _valueFor(poder, edad, p.potencial);
+        await txn.update(
+            'jug_jugadores',
+            {
+              'jug_edad': edad,
+              'jug_poder': poder,
+              'jug_valor': valor,
+              'jug_condicion': 100,
+              'jug_salario': (valor / 180).round(),
+            },
+            where: 'jugid = ?',
+            whereArgs: [p.jugid]);
+      }
+
+      // Isi ulang skuad yang kosong dengan pemain muda
+      for (final c in clubs) {
+        final equid = c['equid'] as int;
+        final count = await txn.rawQuery(
+            'SELECT COUNT(*) c FROM eq_equipos_jugadores WHERE eqju_equid = ?',
+            [equid]);
+        if (((count.first['c'] as int?) ?? 0) >= 18) continue;
+        await gen.fillSquad(equid, (c['equi_poder'] as int?) ?? 60);
+      }
+    });
   }
 
   int _valueFor(int poder, int edad, int potencial) {

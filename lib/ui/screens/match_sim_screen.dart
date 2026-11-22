@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../../audio/sound_service.dart';
 import '../../engine/game_service.dart';
 import '../../models/models.dart';
 import '../theme.dart';
@@ -8,7 +10,14 @@ import 'tactics_screen.dart';
 
 class MatchSimScreen extends StatefulWidget {
   final GameService service;
-  const MatchSimScreen({super.key, required this.service});
+  final ValueListenable<int>? refreshSignal;
+  final VoidCallback? onMatchFinished;
+  const MatchSimScreen({
+    super.key,
+    required this.service,
+    this.refreshSignal,
+    this.onMatchFinished,
+  });
   @override
   State<MatchSimScreen> createState() => _MatchSimScreenState();
 }
@@ -20,7 +29,9 @@ class _MatchSimScreenState extends State<MatchSimScreen> {
   Team? userTeam;
   MatchResult? result;
   bool playing = false;
+  bool paused = false;
   bool fast = false;
+  bool halfTimeShown = false;
   int minute = 0;
   int homeGoals = 0, awayGoals = 0;
   final visible = <MatchEvent>[];
@@ -32,23 +43,40 @@ class _MatchSimScreenState extends State<MatchSimScreen> {
   @override
   void initState() {
     super.initState();
+    widget.refreshSignal?.addListener(_onSignal);
     _load();
   }
 
   @override
   void dispose() {
+    widget.refreshSignal?.removeListener(_onSignal);
     timer?.cancel();
     super.dispose();
   }
 
+  void _onSignal() {
+    if (!mounted) return;
+    // Hanya muat ulang otomatis bila tidak sedang di tengah laga aktif.
+    if (!playing && result == null) {
+      _load();
+    }
+  }
+
   Future<void> _load() async {
+    timer?.cancel();
     final t = await widget.service.userTeam();
     final f = await widget.service.nextUserFixture();
     if (!mounted) return;
     setState(() {
       userTeam = t;
       fixture = f;
+      home = null;
+      away = null;
       result = null;
+      playing = false;
+      paused = false;
+      fast = false;
+      halfTimeShown = false;
       visible.clear();
       minute = 0;
       homeGoals = awayGoals = 0;
@@ -66,41 +94,110 @@ class _MatchSimScreenState extends State<MatchSimScreen> {
   }
 
   Future<void> _startMatch() async {
-    if (fixture == null) return;
+    if (fixture == null || playing) return;
+    timer?.cancel();
     setState(() {
       playing = true;
-      fast = false;
+      paused = false;
+      halfTimeShown = false;
       visible.clear();
       minute = 0;
       homeGoals = awayGoals = 0;
       eventIndex = 0;
     });
-    final res = await widget.service.playUserMatch(
-        fixture!['partid'] as int, needWinner: needWinner);
-    result = res;
-    if (fast) {
-      setState(() {
-        minute = 90;
-        homeGoals = res.homeGoals;
-        awayGoals = res.awayGoals;
-        visible
-          ..clear()
-          ..addAll(res.events);
-      });
-      return;
+    if (!fast) {
+      SoundService.instance.playKickoff();
     }
-    _tick();
+    try {
+      final res = await widget.service.playUserMatch(
+          fixture!['partid'] as int, needWinner: needWinner);
+      if (!mounted) return;
+      result = res;
+      if (fast) {
+        SoundService.instance.playFulltime();
+        setState(() {
+          playing = false;
+          minute = 90;
+          homeGoals = res.homeGoals;
+          awayGoals = res.awayGoals;
+          visible
+            ..clear()
+            ..add(MatchEvent(
+              90,
+              'final',
+              null,
+              null,
+              'Peluit panjang berbunyi! Skor akhir ${res.homeGoals}-${res.awayGoals}.',
+            ))
+            ..addAll(res.events.reversed);
+          eventIndex = res.events.length;
+        });
+        return;
+      }
+      visible.insert(
+        0,
+        MatchEvent(
+          0,
+          'inicio',
+          null,
+          null,
+          'Kick-off! Pertandingan ${home?.nombre ?? ""} vs ${away?.nombre ?? ""} dimulai.',
+        ),
+      );
+      _tick();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        playing = false;
+        fast = false;
+      });
+    }
+  }
+
+  void _playSfxForEvent(MatchEvent e) {
+    switch (e.type) {
+      case 'gol':
+      case 'penalti_gol':
+        SoundService.instance.playGoal();
+        break;
+      case 'amarilla':
+      case 'roja':
+      case 'penalti_keputusan':
+        SoundService.instance.playFoul();
+        break;
+      case 'palo':
+      case 'penalti_fallado':
+        SoundService.instance.playMiss();
+        break;
+    }
   }
 
   void _tick() {
     timer?.cancel();
-    final delayMs = (350 / speedMultiplier).round();
+    if (paused) return;
+    // Basis 1x = 650ms per menit (~58 detik per laga) agar komentar nyaman dibaca
+    final delayMs = (650 / speedMultiplier).round().clamp(40, 1000);
     timer = Timer(Duration(milliseconds: delayMs), () {
       if (!mounted || result == null) return;
+      if (paused) return;
       final r = result!;
+      MatchEvent? soundEvent;
+      var finishedNow = false;
       setState(() {
         minute = (minute + 1).clamp(0, 90);
-        // tampilkan semua event sampai menit ini
+        if (minute == 45 && !halfTimeShown) {
+          halfTimeShown = true;
+          visible.insert(
+            0,
+            MatchEvent(
+              45,
+              'inicio',
+              null,
+              null,
+              'Turun minum! Skor sementara $homeGoals-$awayGoals.',
+            ),
+          );
+        }
         while (eventIndex < r.events.length &&
             (minute >= 90 || r.events[eventIndex].minute <= minute)) {
           final e = r.events[eventIndex];
@@ -112,18 +209,49 @@ class _MatchSimScreenState extends State<MatchSimScreen> {
               awayGoals++;
             }
           }
+          soundEvent = e;
           eventIndex++;
         }
+        if (minute >= 90 && eventIndex >= r.events.length) {
+          homeGoals = r.homeGoals;
+          awayGoals = r.awayGoals;
+          playing = false;
+          finishedNow = true;
+          visible.insert(
+            0,
+            MatchEvent(
+              90,
+              'final',
+              null,
+              null,
+              'Peluit panjang berbunyi! Skor akhir ${r.homeGoals}-${r.awayGoals}.',
+            ),
+          );
+        }
       });
-      if (minute >= 90 && eventIndex >= r.events.length) {
-        homeGoals = r.homeGoals;
-        awayGoals = r.awayGoals;
+
+      if (finishedNow) {
         timer?.cancel();
-        setState(() {});
+        SoundService.instance.playFulltime();
         return;
+      }
+      if (soundEvent != null) {
+        _playSfxForEvent(soundEvent!);
       }
       if (minute < 90 || eventIndex < r.events.length) _tick();
     });
+  }
+
+  void _togglePause() {
+    if (result == null || !playing) return;
+    setState(() {
+      paused = !paused;
+    });
+    if (!paused) {
+      _tick();
+    } else {
+      timer?.cancel();
+    }
   }
 
   @override
@@ -135,6 +263,31 @@ class _MatchSimScreenState extends State<MatchSimScreen> {
       appBar: AppBar(
         title: const Text('Ruang Pertandingan'),
         actions: [
+          IconButton(
+            tooltip: SoundService.instance.enabled ? 'Matikan suara' : 'Nyalakan suara',
+            onPressed: () {
+              setState(() {
+                SoundService.instance.enabled = !SoundService.instance.enabled;
+              });
+              if (!SoundService.instance.enabled) {
+                SoundService.instance.stopAll();
+              } else {
+                SoundService.instance.playTap();
+              }
+            },
+            icon: Icon(
+              SoundService.instance.enabled
+                  ? Icons.volume_up_outlined
+                  : Icons.volume_off_outlined,
+              size: 20,
+            ),
+          ),
+          if (playing && result != null)
+            IconButton(
+              tooltip: paused ? 'Lanjutkan' : 'Jeda',
+              onPressed: _togglePause,
+              icon: Icon(paused ? Icons.play_arrow : Icons.pause, size: 22),
+            ),
           TextButton(
             onPressed: () {
               setState(() {
@@ -142,7 +295,9 @@ class _MatchSimScreenState extends State<MatchSimScreen> {
                     ? 2
                     : speedMultiplier == 2
                         ? 4
-                        : 1;
+                        : speedMultiplier == 4
+                            ? 8
+                            : 1;
               });
             },
             child: Text(
@@ -154,14 +309,14 @@ class _MatchSimScreenState extends State<MatchSimScreen> {
             ),
           ),
           IconButton(
-              onPressed: _load,
+              onPressed: playing ? null : _load,
               icon: const Icon(Icons.refresh, size: 20)),
         ],
       ),
       body: fixture == null
           ? const EmptyState(
               icon: Icons.sports_soccer,
-              text: 'Belum ada laga tersisa musim ini.\nSelesaikan pekan untuk maju.')
+              text: 'Belum ada laga tersisa musim ini.\nTutup musim di tab Klub untuk lanjut ke musim baru.')
           : Column(
               children: [
                 _scoreboard(),
@@ -191,12 +346,18 @@ class _MatchSimScreenState extends State<MatchSimScreen> {
                   ? 'PEKAN ${fixture!['par_jornada']}'
                   : minute >= 90
                       ? 'PERTANDINGAN SELESAI'
-                      : "LIVE · $minute'",
+                      : paused
+                          ? "DIJEDA · $minute'"
+                          : "LIVE · $minute'",
               style: TextStyle(
                   fontSize: 11,
                   letterSpacing: 1.4,
                   fontWeight: FontWeight.w800,
-                  color: minute >= 90 ? AppColors.muted : AppColors.primary)),
+                  color: minute >= 90
+                      ? AppColors.muted
+                      : paused
+                          ? AppColors.accent
+                          : AppColors.primary)),
           const SizedBox(height: 14),
           Row(
             children: [
@@ -243,7 +404,12 @@ class _MatchSimScreenState extends State<MatchSimScreen> {
     if (t == null) return const SizedBox();
     return Column(
       children: [
-        CrestWidget(nombre: t.nombre, colorA: t.colorA, size: 46),
+        CrestWidget(
+          nombre: t.nombre,
+          colorA: t.colorA,
+          colorB: t.colorB,
+          size: 46,
+        ),
         const SizedBox(height: 8),
         Text(t.nombre,
             textAlign: TextAlign.center,
@@ -342,14 +508,20 @@ class _MatchSimScreenState extends State<MatchSimScreen> {
               itemBuilder: (context, i) {
                 if (i == visible.length) {
                   if (!done) {
-                    return const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 20),
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 20),
                       child: Center(
-                          child: SizedBox(
-                              height: 20,
-                              width: 20,
-                              child:
-                                  CircularProgressIndicator(strokeWidth: 2))),
+                          child: paused
+                              ? TextButton.icon(
+                                  onPressed: _togglePause,
+                                  icon: const Icon(Icons.play_arrow),
+                                  label: const Text('Lanjutkan laga'),
+                                )
+                              : const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2))),
                     );
                   }
                   return const SizedBox(height: 4);
@@ -382,9 +554,12 @@ class _MatchSimScreenState extends State<MatchSimScreen> {
                       flex: 2,
                       child: ElevatedButton(
                         onPressed: () async {
-                          await widget.service.finishRound();
+                          final round = fixture?['par_jornada'] as int?;
+                          await widget.service
+                              .finishRound(playedJornada: round);
                           await widget.service.trainWeek();
                           await _load();
+                          widget.onMatchFinished?.call();
                         },
                         style: ElevatedButton.styleFrom(
                             minimumSize: const Size.fromHeight(48)),
@@ -463,7 +638,7 @@ class _MatchSimScreenState extends State<MatchSimScreen> {
                           ]),
                           Text(
                               '${st.goles} gol · ${st.asistencias} assist · ${st.tiros} tembakan'
-                              '${st.atajadas > 0 ? " · ${st.atajadas} atajadas" : ""}'
+                              '${st.atajadas > 0 ? " · ${st.atajadas} penyelamatan" : ""}'
                               '${st.amarillas > 0 ? " · kartu kuning" : ""}'
                               '${st.rojas > 0 ? " · kartu merah" : ""}',
                               style: const TextStyle(
@@ -539,9 +714,15 @@ class _MatchSimScreenState extends State<MatchSimScreen> {
         icon = Icons.sports;
         color = AppColors.accent;
         break;
+      case 'inicio':
+      case 'final':
+        icon = Icons.sports;
+        color = AppColors.primary;
+        break;
       default:
         icon = Icons.info_outline;
     }
+    final isHighlight = e.type == 'gol' || e.type == 'penalti_gol' || e.type == 'final';
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
@@ -562,12 +743,8 @@ class _MatchSimScreenState extends State<MatchSimScreen> {
                 style: TextStyle(
                     fontSize: 12.5,
                     height: 1.35,
-                    color: e.type == 'gol' || e.type == 'penalti_gol'
-                        ? AppColors.text
-                        : AppColors.muted,
-                    fontWeight: e.type == 'gol' || e.type == 'penalti_gol'
-                        ? FontWeight.w700
-                        : FontWeight.w400)),
+                    color: isHighlight ? AppColors.text : AppColors.muted,
+                    fontWeight: isHighlight ? FontWeight.w700 : FontWeight.w400)),
           ),
         ],
       ),

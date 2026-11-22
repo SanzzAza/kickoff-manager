@@ -501,8 +501,11 @@ class SeasonEndScreen extends StatelessWidget {
                 ),
               if ((info['offers'] as List).isNotEmpty) ...[
                 const SizedBox(height: 12),
-                const Text('LAMARAN KLUB LAIN',
-                    style: TextStyle(
+                Text(
+                    info['sacked'] == true
+                        ? 'PILIH KLUB BARU'
+                        : 'LAMARAN KLUB LAIN',
+                    style: const TextStyle(
                         fontSize: 10,
                         letterSpacing: 1,
                         fontWeight: FontWeight.w800,
