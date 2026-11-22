@@ -308,6 +308,25 @@ class GameService {
     final others = squad.where((p) => p.titular != 1 && p.disponible).toList()
       ..sort((a, b) => b.poder - a.poder);
     final pool = [...listed, ...others];
+
+    // Jika user sudah menentukan 11 pemain inti secara manual, hormati pilihan tersebut.
+    if (listed.length == 11) {
+      final gkIdx = listed.indexWhere((p) => p.posid == 1);
+      final ordered = List<Player>.from(listed);
+      if (gkIdx > 0) {
+        final gk = ordered.removeAt(gkIdx);
+        ordered.insert(0, gk);
+      }
+      final used = ordered.map((p) => p.jugid).toSet();
+      final bench = pool.where((p) => !used.contains(p.jugid)).take(7).toList();
+      return TeamSetup(
+        xi: ordered,
+        bench: bench,
+        tactics: tac,
+        clubPower: team.poder,
+        name: team.nombre,
+      );
+    }
     final roles = tac.formacion.roles;
     final chosen = <Player>[];
     final used = <int>{};

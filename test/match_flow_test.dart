@@ -115,6 +115,7 @@ void main() {
     await t.pump();
     await settle(t);
     expect(find.text('MULAI MUSIM BARU'), findsOneWidget);
+    await t.ensureVisible(find.text('MULAI MUSIM BARU'));
     await t.tap(find.text('MULAI MUSIM BARU'));
     await t.runAsync(() => Future.delayed(const Duration(milliseconds: 1000)));
     await t.pump();

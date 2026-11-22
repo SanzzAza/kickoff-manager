@@ -26,7 +26,9 @@ class TeamSetup {
   List<Player> get _def => xi.where((p) => p.posid >= 2 && p.posid <= 4).toList();
   List<Player> get _mid => xi.where((p) => p.posid >= 5 && p.posid <= 8).toList();
   List<Player> get _att => xi.where((p) => p.posid >= 9).toList();
-  Player get _gk => xi.firstWhere((p) => p.posid == 1, orElse: () => xi.first);
+  Player? get _gk => xi.isEmpty
+      ? null
+      : xi.firstWhere((p) => p.posid == 1, orElse: () => xi.first);
 
   int get attackRating {
     final base = _avg(_att.map((p) => p.ataque));
@@ -48,7 +50,7 @@ class TeamSetup {
 
   int get defenseRating {
     final d = _avg(_def.map((p) => p.defensivo));
-    final gk = _gk.kiper;
+    final gk = _gk?.kiper ?? 40;
     var v = (d * 0.78 + gk * 0.22).round();
     if (tactics.mentalidad == Mentality.defensivo) v += 5;
     if (tactics.mentalidad == Mentality.ofensivo) v -= 4;

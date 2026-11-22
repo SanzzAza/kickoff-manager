@@ -510,103 +510,104 @@ class SeasonEndScreen extends StatelessWidget {
     final championUser = info['championUser'] as bool;
     return Scaffold(
       body: SafeArea(
-        child: Padding(
+        child: ListView(
           padding: const EdgeInsets.all(20),
-          child: Column(
-            children: [
-              const Spacer(),
-              Icon(championUser ? Icons.emoji_events : Icons.sports_soccer,
-                  size: 74,
-                  color: championUser ? AppColors.gold : AppColors.primary),
-              const SizedBox(height: 18),
-              Text(
-                  championUser
-                      ? 'JUARA ${(info['year'] as int)}/${(info['year'] as int) + 1}'
-                      : 'MUSIM SELESAI',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.w900,
-                      color: championUser ? AppColors.gold : AppColors.text)),
-              const SizedBox(height: 8),
-              Text('Juara liga: ${info['champion']}',
-                  style: const TextStyle(fontSize: 13, color: AppColors.muted)),
-              const SizedBox(height: 20),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    children: [
-                      _row('Posisi akhir', '${info['userPos']}'),
-                      const Divider(),
-                      _row('Pencetak gol terbanyak',
-                          '${info['scorer']} (${info['scorerGoals']})'),
-                      const Divider(),
-                      _row('Hadiah liga', formatMoney(info['prize'] as int)),
-                    ],
-                  ),
+          children: [
+            const SizedBox(height: 16),
+            Icon(championUser ? Icons.emoji_events : Icons.sports_soccer,
+                size: 74,
+                color: championUser ? AppColors.gold : AppColors.primary),
+            const SizedBox(height: 18),
+            Text(
+                championUser
+                    ? 'JUARA ${(info['year'] as int)}/${(info['year'] as int) + 1}'
+                    : 'MUSIM SELESAI',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.w900,
+                    color: championUser ? AppColors.gold : AppColors.text)),
+            const SizedBox(height: 8),
+            Text('Juara liga: ${info['champion']}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 13, color: AppColors.muted)),
+            const SizedBox(height: 20),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    _row('Posisi akhir', '${info['userPos']}'),
+                    const Divider(),
+                    _row('Pencetak gol terbanyak',
+                        '${info['scorer']} (${info['scorerGoals']})'),
+                    const Divider(),
+                    _row('Hadiah liga', formatMoney(info['prize'] as int)),
+                  ],
                 ),
               ),
-              if (info['sacked'] == true)
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                      color: AppColors.danger.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                          color: AppColors.danger.withOpacity(0.5))),
-                  child: const Text(
-                      'Direksi kehilangan kepercayaan dan memutus kontrakmu. '
-                      'Kamu harus mencari klub baru.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 12, color: AppColors.danger)),
-                ),
-              if ((info['offers'] as List).isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Text(
-                    info['sacked'] == true
-                        ? 'PILIH KLUB BARU'
-                        : 'LAMARAN KLUB LAIN',
-                    style: const TextStyle(
-                        fontSize: 10,
-                        letterSpacing: 1,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.muted)),
-                const SizedBox(height: 6),
-                ...(info['offers'] as List).map((o) => Card(
-                      child: ListTile(
-                        dense: true,
-                        title: Text(o['nombre'] as String,
-                            style: const TextStyle(fontSize: 13)),
-                        subtitle: Text('Kekuatan ${o['poder']}',
-                            style: const TextStyle(
-                                fontSize: 11, color: AppColors.muted)),
-                        trailing: TextButton(
-                          onPressed: () async {
-                            await service.acceptJob(o['equid'] as int);
-                            await service.nextSeason();
-                            if (context.mounted) Navigator.pop(context);
-                          },
-                          child: const Text('Terima'),
-                        ),
-                      ),
-                    )),
-              ],
-              const Spacer(),
-              ElevatedButton(
-                onPressed: () async {
-                  await service.nextSeason();
-                  if (context.mounted) Navigator.pop(context);
-                },
-                style: ElevatedButton.styleFrom(
-                    minimumSize: const Size.fromHeight(52)),
-                child: Text(info['sacked'] == true
-                    ? 'LANJUTKAN KARIER'
-                    : 'MULAI MUSIM BARU'),
+            ),
+            if (info['sacked'] == true) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                    color: AppColors.danger.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border:
+                        Border.all(color: AppColors.danger.withOpacity(0.5))),
+                child: const Text(
+                    'Direksi kehilangan kepercayaan dan memutus kontrakmu. '
+                    'Kamu harus mencari klub baru.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 12, color: AppColors.danger)),
               ),
-              const SizedBox(height: 8),
             ],
-          ),
+            if ((info['offers'] as List).isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                  info['sacked'] == true
+                      ? 'PILIH KLUB BARU'
+                      : 'LAMARAN KLUB LAIN',
+                  style: const TextStyle(
+                      fontSize: 10,
+                      letterSpacing: 1,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.muted)),
+              const SizedBox(height: 6),
+              ...(info['offers'] as List).map((o) => Card(
+                    child: ListTile(
+                      dense: true,
+                      title: Text(o['nombre'] as String,
+                          style: const TextStyle(fontSize: 13)),
+                      subtitle: Text('Kekuatan ${o['poder']}',
+                          style: const TextStyle(
+                              fontSize: 11, color: AppColors.muted)),
+                      trailing: TextButton(
+                        onPressed: () async {
+                          await service.acceptJob(o['equid'] as int);
+                          await service.nextSeason();
+                          if (context.mounted) Navigator.pop(context);
+                        },
+                        child: const Text('Terima'),
+                      ),
+                    ),
+                  )),
+            ],
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: () async {
+                await service.nextSeason();
+                if (context.mounted) Navigator.pop(context);
+              },
+              style: ElevatedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(52)),
+              child: Text(info['sacked'] == true
+                  ? 'LANJUTKAN KARIER'
+                  : 'MULAI MUSIM BARU'),
+            ),
+            const SizedBox(height: 8),
+          ],
         ),
       ),
     );
