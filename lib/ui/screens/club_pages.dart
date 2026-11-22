@@ -168,10 +168,10 @@ class _StadiumScreenState extends State<StadiumScreen> {
                   const SizedBox(height: 12),
                   Row(
                     children: [
-                      _statSq('General', s.general, s.maxGeneral),
-                      _statSq('Plateas', s.plateas, s.maxPlateas),
-                      _statSq('Tribunas', s.tribunas, s.maxTribunas),
-                      _statSq('Palcos', s.palcos, s.maxPalcos),
+                      _statSq('Ekonomi', s.general, s.maxGeneral),
+                      _statSq('Utama', s.plateas, s.maxPlateas),
+                      _statSq('Samping', s.tribunas, s.maxTribunas),
+                      _statSq('VIP Box', s.palcos, s.maxPalcos),
                     ],
                   ),
                 ],
@@ -204,6 +204,12 @@ class _StadiumScreenState extends State<StadiumScreen> {
           ),
           SectionTitle('Ekspansi tribun'),
           ...['general', 'plateas', 'tribunas', 'palcos'].map((sector) {
+            final labels = {
+              'general': 'Tribun Ekonomi',
+              'plateas': 'Tribun Utama',
+              'tribunas': 'Tribun Samping',
+              'palcos': 'VIP Box',
+            };
             final cur = {
               'general': s.general,
               'plateas': s.plateas,
@@ -219,7 +225,7 @@ class _StadiumScreenState extends State<StadiumScreen> {
             final full = cur >= max;
             return ListTile(
               dense: true,
-              title: Text('$sector  ($cur/$max)',
+              title: Text('${labels[sector]}  ($cur/$max)',
                   style: const TextStyle(fontSize: 13)),
               subtitle: Text(
                   full ? 'Sudah maksimum' : 'Tambah 1000 kursi',

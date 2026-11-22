@@ -348,7 +348,7 @@ class _MatchSimScreenState extends State<MatchSimScreen> {
     }
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Ruang Pertandingan'),
+        title: const Text('Pertandingan'),
         actions: [
           IconButton(
             tooltip:
@@ -1295,10 +1295,16 @@ class _MiniPitchPainter extends CustomPainter {
         Rect.fromLTWH(size.width - 18, size.height * 0.22, 16, size.height * 0.56),
         line);
 
-    // 22 titik formasi sederhana
+    // 22 titik formasi sederhana dengan warna klub cerah + tepi putih agar kontras
     final shift = (ballX - 0.5) * 0.14;
-    final hPaint = Paint()..color = homeColor;
-    final aPaint = Paint()..color = awayColor;
+    final hPaint = Paint()
+      ..color = Color.lerp(homeColor, Colors.white, 0.35) ?? const Color(0xFF00E676);
+    final aPaint = Paint()
+      ..color = Color.lerp(awayColor, Colors.white, 0.35) ?? const Color(0xFFFFB74D);
+    final borderPaint = Paint()
+      ..color = Colors.white.withOpacity(0.75)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.8;
     const hPts = [
       [0.06, 0.5],
       [0.20, 0.2], [0.18, 0.4], [0.18, 0.6], [0.20, 0.8],
@@ -1308,11 +1314,13 @@ class _MiniPitchPainter extends CustomPainter {
     for (var i = 0; i < hPts.length; i++) {
       final px = ((hPts[i][0] + (i == 0 ? 0 : shift)).clamp(0.05, 0.92)) * size.width;
       final py = hPts[i][1] * size.height;
-      canvas.drawCircle(Offset(px, py), 2.5, hPaint);
+      canvas.drawCircle(Offset(px, py), 3.1, hPaint);
+      canvas.drawCircle(Offset(px, py), 3.1, borderPaint);
 
       final ax = ((1.0 - hPts[i][0] + (i == 0 ? 0 : shift)).clamp(0.08, 0.95)) * size.width;
       final ay = (1.0 - hPts[i][1]) * size.height;
-      canvas.drawCircle(Offset(ax, ay), 2.5, aPaint);
+      canvas.drawCircle(Offset(ax, ay), 3.1, aPaint);
+      canvas.drawCircle(Offset(ax, ay), 3.1, borderPaint);
     }
 
     // Bola

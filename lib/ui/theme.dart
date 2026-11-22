@@ -125,19 +125,19 @@ String formatMoney(num v) {
 class Squads {
   static String positionName(int posid) {
     const m = {
-      1: 'POR',
-      2: 'DC',
-      3: 'LIB',
-      4: 'LD',
-      5: 'MDF',
-      6: 'MCO',
-      7: 'MC',
-      8: 'EXT',
-      9: 'ED',
-      10: 'DC',
-      11: 'MP',
+      1: 'GK',
+      2: 'CB',
+      3: 'SW',
+      4: 'FB',
+      5: 'DM',
+      6: 'AM',
+      7: 'CM',
+      8: 'WM',
+      9: 'WF',
+      10: 'ST',
+      11: 'SS',
     };
-    return m[posid] ?? 'MC';
+    return m[posid] ?? 'CM';
   }
 
   static Color positionColor(int posid) {

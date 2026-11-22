@@ -58,7 +58,7 @@ class WorldGenerator {
       // Piala domestik untuk tiap negara (organizacion 3 = copa)
       await ex.insert('tor_torneos', {
         'torid': torid,
-        'tor_nombre': 'Copa ${l.country}',
+        'tor_nombre': 'Piala ${countryLabel(l.country)}',
         'tor_idiv': 0,
         'tor_status': 1,
         'tor_organizacion': 3,

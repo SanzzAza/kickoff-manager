@@ -322,7 +322,7 @@ class _TableScreenState extends State<TableScreen>
                         ),
                         child: Column(
                           children: [
-                            Text(played ? '$hg - $ag' : 'J${m['par_jornada']}',
+                            Text(played ? '$hg - $ag' : 'P${m['par_jornada']}',
                                 style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w900,
@@ -465,7 +465,7 @@ class _TableScreenState extends State<TableScreen>
                               ? 'KONTI'
                               : isCup
                                   ? 'PIALA'
-                                  : 'J${f['par_jornada']}',
+                                  : 'P${f['par_jornada']}',
                           style: TextStyle(
                               fontSize: 10.5,
                               fontWeight: (isCup || isConti)

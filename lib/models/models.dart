@@ -268,23 +268,23 @@ enum Formation {
 }
 
 class Mentality {
-  static const defensivo = 'Defensivo';
-  static const equilibrado = 'Equilibrado';
-  static const ofensivo = 'Ofensivo';
+  static const defensivo = 'Bertahan';
+  static const equilibrado = 'Seimbang';
+  static const ofensivo = 'Menyerang';
   static const all = [defensivo, equilibrado, ofensivo];
 }
 
 class Pressure {
-  static const baja = 'Baja';
-  static const media = 'Media';
-  static const alta = 'Alta';
+  static const baja = 'Rendah';
+  static const media = 'Sedang';
+  static const alta = 'Tinggi';
   static const all = [baja, media, alta];
 }
 
 class Style {
-  static const posesion = 'Posesión';
-  static const contraataque = 'Contraataque';
-  static const directo = 'Juego Directo';
+  static const posesion = 'Penguasaan';
+  static const contraataque = 'Serangan Balik';
+  static const directo = 'Umpan Langsung';
   static const all = [posesion, contraataque, directo];
 }
 
@@ -321,12 +321,51 @@ class Tactics {
         'linea': linea,
       };
 
+  static String _normMentality(String? v) {
+    switch (v) {
+      case 'Defensivo':
+        return Mentality.defensivo;
+      case 'Ofensivo':
+        return Mentality.ofensivo;
+      case 'Equilibrado':
+        return Mentality.equilibrado;
+      default:
+        return Mentality.all.contains(v) ? v! : Mentality.equilibrado;
+    }
+  }
+
+  static String _normPressure(String? v) {
+    switch (v) {
+      case 'Baja':
+        return Pressure.baja;
+      case 'Alta':
+        return Pressure.alta;
+      case 'Media':
+        return Pressure.media;
+      default:
+        return Pressure.all.contains(v) ? v! : Pressure.media;
+    }
+  }
+
+  static String _normStyle(String? v) {
+    switch (v) {
+      case 'Contraataque':
+        return Style.contraataque;
+      case 'Juego Directo':
+        return Style.directo;
+      case 'Posesión':
+        return Style.posesion;
+      default:
+        return Style.all.contains(v) ? v! : Style.posesion;
+    }
+  }
+
   static Tactics fromJson(Map<String, dynamic> j) => Tactics(
         formacion: Formation.values.firstWhere((f) => f.label == j['formacion'],
             orElse: () => Formation.f433),
-        mentalidad: (j['mentalidad'] ?? Mentality.equilibrado) as String,
-        presion: (j['presion'] ?? Pressure.media) as String,
-        estilo: (j['estilo'] ?? Style.posesion) as String,
+        mentalidad: _normMentality(j['mentalidad'] as String?),
+        presion: _normPressure(j['presion'] as String?),
+        estilo: _normStyle(j['estilo'] as String?),
         amplitud: (j['amplitud'] ?? 3) as int,
         linea: (j['linea'] ?? 3) as int,
       );

@@ -287,9 +287,9 @@ class GameService {
         await db.rawQuery('SELECT COALESCE(MAX(torid), 100) m FROM tor_torneos');
     final nextId = ((maxRow.first['m'] as int?) ?? 100) + 1;
     final name = confed == 'UEFA'
-        ? 'Champions Kontinental'
+        ? 'Liga Champions Kontinental'
         : confed == 'CONMEBOL'
-            ? 'Copa Kontinental'
+            ? 'Piala Libertadores Kontinental'
             : 'Piala Kontinental';
     await db.insert('tor_torneos', {
       'torid': nextId,
@@ -319,8 +319,8 @@ class GameService {
 
   Future<int?> _cupTorneoId(String country) async {
     final r = await db.query('tor_torneos',
-        where: 'tor_nombre = ? AND tor_organizacion = 3',
-        whereArgs: ['Copa $country'],
+        where: '(tor_nombre = ? OR tor_nombre = ?) AND tor_organizacion = 3',
+        whereArgs: ['Piala ${countryLabel(country)}', 'Copa $country'],
         limit: 1);
     if (r.isEmpty) return null;
     return r.first['torid'] as int;

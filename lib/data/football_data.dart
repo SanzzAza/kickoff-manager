@@ -271,18 +271,38 @@ class PositionDef {
 }
 
 const List<PositionDef> positions = [
-  PositionDef(1, 'POR', 'Portero', 1),
-  PositionDef(2, 'DC', 'Defensa Central', 2),
-  PositionDef(3, 'LIB', 'Líbero', 2),
-  PositionDef(4, 'LD', 'Lateral', 2),
-  PositionDef(5, 'MDF', 'Mediocampista Defensivo', 3),
-  PositionDef(6, 'MCO', 'Mediocampista Ofensivo', 3),
-  PositionDef(7, 'MC', 'Mediocampista Central', 3),
-  PositionDef(8, 'EXT', 'Extremo', 3),
-  PositionDef(9, 'ED', 'Delantero Extremo', 4),
-  PositionDef(10, 'DC9', 'Centro Delantero', 4),
-  PositionDef(11, 'MP', 'Media Punta', 4),
+  PositionDef(1, 'GK', 'Kiper', 1),
+  PositionDef(2, 'CB', 'Bek Tengah', 2),
+  PositionDef(3, 'SW', 'Libero', 2),
+  PositionDef(4, 'FB', 'Bek Sayap', 2),
+  PositionDef(5, 'DM', 'Gelandang Bertahan', 3),
+  PositionDef(6, 'AM', 'Gelandang Serang', 3),
+  PositionDef(7, 'CM', 'Gelandang Tengah', 3),
+  PositionDef(8, 'WM', 'Sayap', 3),
+  PositionDef(9, 'WF', 'Penyerang Sayap', 4),
+  PositionDef(10, 'ST', 'Penyerang Tengah', 4),
+  PositionDef(11, 'SS', 'Penyerang Bayangan', 4),
 ];
+
+String countryLabel(String country) {
+  const m = {
+    'España': 'Spanyol',
+    'Inglaterra': 'Inggris',
+    'Italia': 'Italia',
+    'Alemania': 'Jerman',
+    'Francia': 'Prancis',
+    'Argentina': 'Argentina',
+    'Brasil': 'Brasil',
+    'Uruguay': 'Uruguay',
+    'México': 'Meksiko',
+    'Estados Unidos': 'Amerika Serikat',
+    'Indonesia': 'Indonesia',
+    'Japón': 'Jepang',
+    'Egipto': 'Mesir',
+    'Marruecos': 'Maroko',
+  };
+  return m[country] ?? country;
+}
 
 const List<String> habilidades = [
   'Atajadas', 'Reflejos', 'Anticipación', 'Juego Aéreo', 'Posicionamiento',

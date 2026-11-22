@@ -193,7 +193,7 @@ class _NewGameScreenState extends State<NewGameScreen> {
                           Text(l.name,
                               style: const TextStyle(
                                   fontWeight: FontWeight.w800, fontSize: 15)),
-                          Text('${l.country} · ${l.teams} klub · level ${l.base}',
+                          Text('${countryLabel(l.country)} · ${l.teams} klub · level ${l.base}',
                               style: const TextStyle(
                                   color: AppColors.muted, fontSize: 12)),
                         ],
