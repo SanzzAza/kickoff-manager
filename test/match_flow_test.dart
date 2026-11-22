@@ -114,9 +114,10 @@ void main() {
     await t.runAsync(() => Future.delayed(const Duration(milliseconds: 1500)));
     await t.pump();
     await settle(t);
-    expect(find.text('MULAI MUSIM BARU'), findsOneWidget);
-    await t.ensureVisible(find.text('MULAI MUSIM BARU'));
-    await t.tap(find.text('MULAI MUSIM BARU'));
+    final nextBtn = find.byKey(const Key('next_season_btn'));
+    expect(nextBtn, findsOneWidget);
+    await t.ensureVisible(nextBtn);
+    await t.tap(nextBtn);
     await t.runAsync(() => Future.delayed(const Duration(milliseconds: 1000)));
     await t.pump();
     await settle(t);

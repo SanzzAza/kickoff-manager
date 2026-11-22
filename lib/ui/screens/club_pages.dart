@@ -596,6 +596,7 @@ class SeasonEndScreen extends StatelessWidget {
             ],
             const SizedBox(height: 20),
             ElevatedButton(
+              key: const Key('next_season_btn'),
               onPressed: () async {
                 await service.nextSeason();
                 if (context.mounted) Navigator.pop(context);
@@ -617,13 +618,17 @@ class SeasonEndScreen extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 6),
         child: Row(
           children: [
+            Text(k,
+                style: const TextStyle(fontSize: 12, color: AppColors.muted)),
+            const SizedBox(width: 8),
             Expanded(
-                child: Text(k,
-                    style:
-                        const TextStyle(fontSize: 12, color: AppColors.muted))),
-            Text(v,
-                style: const TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w800)),
+              child: Text(v,
+                  textAlign: TextAlign.end,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w800)),
+            ),
           ],
         ),
       );
