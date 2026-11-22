@@ -41,8 +41,9 @@ void main() {
     expect(faErr, isNull);
     expect((await svc.world.squad(user.equid)).any((p) => p.jugid == faId), isTrue);
 
-    // 3. Pinjam pemain 1 musim
-    final targets = await svc.marketPlayers(minPoder: 55, limit: 10);
+    // 3. Pinjam pemain 1 musim (cari pemain rating realistis agar kas cukup)
+    final targets =
+        await svc.marketPlayers(minPoder: 55, maxPoder: 68, limit: 10);
     final loanTarget = targets.firstWhere((r) => (r['club'] as int? ?? 0) != 0);
     final loanId = loanTarget['jugid'] as int;
     final origClub = loanTarget['club'] as int;

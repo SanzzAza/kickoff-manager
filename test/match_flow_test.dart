@@ -111,16 +111,20 @@ void main() {
     await t.tap(find.text('Klub').last);
     await settle(t);
     expect(find.text('TUTUP MUSIM'), findsOneWidget);
+    await t.ensureVisible(find.text('TUTUP MUSIM'));
     await t.tap(find.text('TUTUP MUSIM'));
-    await t.runAsync(() => Future.delayed(const Duration(milliseconds: 1500)));
-    await t.pump();
-    await settle(t);
     final nextBtn = find.byKey(const Key('next_season_btn'));
+    for (var i = 0; i < 20 && nextBtn.evaluate().isEmpty; i++) {
+      await t.runAsync(() => Future.delayed(const Duration(milliseconds: 500)));
+      await t.pump();
+    }
     expect(nextBtn, findsOneWidget);
     await t.ensureVisible(nextBtn);
     await t.tap(nextBtn);
-    await t.runAsync(() => Future.delayed(const Duration(milliseconds: 1000)));
-    await t.pump();
+    for (var i = 0; i < 20 && nextBtn.evaluate().isNotEmpty; i++) {
+      await t.runAsync(() => Future.delayed(const Duration(milliseconds: 500)));
+      await t.pump();
+    }
     await settle(t);
 
     // Pindah lagi ke tab Main -> harus langsung muncul laga musim 2 & tombol KICK OFF
