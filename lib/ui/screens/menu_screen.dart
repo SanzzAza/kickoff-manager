@@ -5,6 +5,8 @@ import '../widgets.dart';
 import 'tactics_screen.dart';
 import 'inbox_screen.dart';
 import 'club_pages.dart';
+import 'academy_screen.dart';
+import 'career_extras_screens.dart';
 
 class MenuScreen extends StatelessWidget {
   final GameService service;
@@ -22,19 +24,31 @@ class MenuScreen extends StatelessWidget {
           _item(context, Icons.fitness_center, 'Latihan',
               'Program latihan mingguan dan perkembangan pemain',
               (ctx) => TrainingScreen(service: service)),
+          _item(context, Icons.school, 'Akademi Muda',
+              'Cari wonderkid & buat pemain kustom',
+              (ctx) => AcademyScreen(service: service)),
+          _item(context, Icons.handshake, 'Laga Uji Coba',
+              'Jadwalkan pertandingan persahabatan (maks 5/musim)',
+              (ctx) => FriendlyMatchScreen(service: service)),
           _item(context, Icons.stadium, 'Stadion',
               'Kapasitas tribun, harga tiket, ekspansi',
               (ctx) => StadiumScreen(service: service)),
           const Divider(),
-          SectionTitle('Klub'),
+          SectionTitle('Klub & Karier'),
           _item(context, Icons.savings, 'Finansial',
               'Pemasukan, gaji, operasional, sponsor',
               (ctx) => FinanceScreen(service: service)),
+          _item(context, Icons.work_outline, 'Bursa Manajer & Pindah Klub',
+              'Lamar atau pindah melatih klub lain',
+              (ctx) => JobMarketScreen(service: service)),
+          _item(context, Icons.tune, 'Editor Klub & Skuad',
+              'Ubah nama klub, warna perisai, dan pemain (Gratis)',
+              (ctx) => ClubEditorScreen(service: service)),
           _item(context, Icons.mail_outline, 'Kotak masuk',
               'Pesan dari direksi, agen, dan media',
               (ctx) => InboxScreen(service: service)),
           _item(context, Icons.emoji_events, 'Sejarah & trofi',
-              'Musim-musim sebelumnya',
+              'Musim-musim sebelumnya & penghargaan individu',
               (ctx) => HistoryScreen(service: service)),
         ],
       ),

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../../db/db.dart';
 import '../../engine/game_service.dart';
 import '../../models/models.dart';
 import '../theme.dart';
@@ -9,6 +10,7 @@ import 'inbox_screen.dart';
 import 'tactics_screen.dart';
 import 'club_pages.dart';
 import 'academy_screen.dart';
+import 'career_extras_screens.dart';
 
 class ClubScreen extends StatefulWidget {
   final GameService service;
@@ -58,6 +60,8 @@ class _ClubScreenState extends State<ClubScreen> {
     final squad = await widget.service.world.squad(team.equid);
     final wages = squad.fold<int>(0, (a, p) => a + p.salario);
     final offer = await widget.service.pendingOffer();
+    final superCup = await widget.service.superCupInfo();
+    final friendly = await widget.service.friendlyInfo();
     if (!mounted) return;
     setState(() {
       data = {
@@ -71,6 +75,8 @@ class _ClubScreenState extends State<ClubScreen> {
         'wages': wages,
         'squad': squad.length,
         'offer': offer,
+        'superCup': superCup,
+        'friendlyRemaining': friendly['remaining'],
       };
     });
   }
@@ -120,10 +126,13 @@ class _ClubScreenState extends State<ClubScreen> {
     if (data == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-    final st = data!['state'] as dynamic;
+    final st = data!['state'] as SaveState;
+    final profile = st.managerProfile();
     final team = data!['team'] as Team;
     final stadium = data!['stadium'] as Stadium;
     final next = data!['next'] as Map<String, dynamic>?;
+    final superCup = data!['superCup'] as Map<String, dynamic>?;
+    final friendlyRemaining = (data!['friendlyRemaining'] as int?) ?? 5;
     final season = st.i('season_year');
     final week = st.i('week');
     final totalWeeks = st.i('total_weeks');
@@ -197,7 +206,7 @@ class _ClubScreenState extends State<ClubScreen> {
                           size: 56,
                           colorA: team.colorA,
                           colorB: team.colorB),
-                      const SizedBox(width: 14),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -232,6 +241,17 @@ class _ClubScreenState extends State<ClubScreen> {
                           ],
                         ),
                       ),
+                      Column(
+                        children: [
+                          ManagerAvatar(profile: profile, size: 46),
+                          const SizedBox(height: 3),
+                          Text(profile.trait.badge,
+                              style: const TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.primary)),
+                        ],
+                      ),
                     ],
                   ),
                   const SizedBox(height: 14),
@@ -258,6 +278,38 @@ class _ClubScreenState extends State<ClubScreen> {
                 ],
               ),
             ),
+            if (superCup != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+                child: Card(
+                  color: AppColors.surface2,
+                  child: ListTile(
+                    leading: const Icon(Icons.emoji_events,
+                        color: AppColors.gold, size: 30),
+                    title: Text(
+                        'Piala Super vs ${(superCup['opponent'] as Team).nombre}',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w800, fontSize: 13.5)),
+                    subtitle: Text(
+                        'Hadiah trofi + ${formatMoney(superCup['prize'] as int)}',
+                        style: const TextStyle(
+                            fontSize: 11, color: AppColors.muted)),
+                    trailing: FilledButton(
+                      onPressed: () async {
+                        final res = await widget.service.playSuperCup();
+                        await _load();
+                        if (!mounted) return;
+                        final txt = res['won'] == true
+                            ? 'JUARA PIALA SUPER! (${res['hg']}-${res['ag']})'
+                            : 'Piala Super selesai (${res['hg']}-${res['ag']})';
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(SnackBar(content: Text(txt)));
+                      },
+                      child: const Text('Mainkan'),
+                    ),
+                  ),
+                ),
+              ),
             if (next != null) _nextMatchCard(next, team),
             if (data!['offer'] != null)
               _incomingOfferCard(data!['offer'] as Map<String, dynamic>),
@@ -322,6 +374,12 @@ class _ClubScreenState extends State<ClubScreen> {
                   _tile(Icons.school, 'Akademi',
                       'Lv ${st.i('academy_level') > 0 ? st.i('academy_level') : 1} Wonderkid',
                       () => _push(AcademyScreen(service: widget.service))),
+                  _tile(Icons.handshake, 'Uji Coba', '$friendlyRemaining/5 tersisa',
+                      () => _push(FriendlyMatchScreen(service: widget.service))),
+                  _tile(Icons.work_outline, 'Pindah Klub', 'Bursa manajer',
+                      () => _push(JobMarketScreen(service: widget.service))),
+                  _tile(Icons.tune, 'Editor', 'Ubah klub & skuad',
+                      () => _push(ClubEditorScreen(service: widget.service))),
                   _tile(Icons.emoji_events, 'Karier',
                       '${st.i('trophies')} trofi',
                       () => _push(HistoryScreen(service: widget.service))),

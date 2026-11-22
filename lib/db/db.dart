@@ -150,6 +150,18 @@ class SaveState {
     if (raw == null) return Tactics();
     return Tactics.fromJson(jsonDecode(raw) as Map<String, dynamic>);
   }
+
+  ManagerProfile managerProfile() {
+    final raw = _m['manager_profile'];
+    if (raw == null || raw.isEmpty) {
+      return ManagerProfile(name: _m['manager'] ?? 'Pelatih');
+    }
+    try {
+      return ManagerProfile.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    } catch (_) {
+      return ManagerProfile(name: _m['manager'] ?? 'Pelatih');
+    }
+  }
 }
 
 class World {

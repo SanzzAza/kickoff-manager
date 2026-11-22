@@ -210,16 +210,8 @@ class _PlayerDetailSheetState extends State<PlayerDetailSheet> {
           const SizedBox(height: 14),
           Row(
             children: [
-              CircleAvatar(
-                radius: 30,
-                backgroundColor:
-                    Squads.positionColor(p.posid).withOpacity(0.18),
-                child: Text(Squads.positionName(p.posid),
-                    style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        color: Squads.positionColor(p.posid))),
-              ),
-              const SizedBox(width: 14),
+              PlayerAvatar(seed: p.jugid, size: 58),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -228,7 +220,7 @@ class _PlayerDetailSheetState extends State<PlayerDetailSheet> {
                       Flexible(
                         child: Text(p.nombre,
                             style: const TextStyle(
-                                fontSize: 19, fontWeight: FontWeight.w900)),
+                                fontSize: 18, fontWeight: FontWeight.w900)),
                       ),
                       if (p.star == 1) ...[
                         const SizedBox(width: 5),
@@ -236,10 +228,10 @@ class _PlayerDetailSheetState extends State<PlayerDetailSheet> {
                       ],
                     ]),
                     Text(
-                        '${p.edad} tahun · ${p.estatura} cm · #${p.numero} · '
+                        '${Squads.positionName(p.posid)} · ${p.edad} th · ${p.estatura} cm · #${p.numero} · '
                         '${p.perfil == 'I' ? 'Kaki kiri' : 'Kaki kanan'}',
                         style: const TextStyle(
-                            fontSize: 12, color: AppColors.muted)),
+                            fontSize: 11.5, color: AppColors.muted)),
                   ],
                 ),
               ),
@@ -254,6 +246,30 @@ class _PlayerDetailSheetState extends State<PlayerDetailSheet> {
               ),
             ],
           ),
+          if (PlayerSkillCatalog.skillsFor(p).isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: PlayerSkillCatalog.skillsFor(p)
+                  .map((sk) => Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withOpacity(0.14),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                              color: AppColors.primary.withOpacity(0.45)),
+                        ),
+                        child: Text('★ ${sk.name}',
+                            style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.primary)),
+                      ))
+                  .toList(),
+            ),
+          ],
           const SizedBox(height: 14),
           Card(
             child: Padding(

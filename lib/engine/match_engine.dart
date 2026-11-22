@@ -12,12 +12,16 @@ class TeamSetup {
   Tactics tactics;
   final int clubPower;
   final String name;
+  final int tacticBonus;
+  final double staminaDrainFactor;
   TeamSetup({
     required this.xi,
     required this.bench,
     required this.tactics,
     required this.clubPower,
     required this.name,
+    this.tacticBonus = 0,
+    this.staminaDrainFactor = 1.0,
   });
 
   int _avg(Iterable<int> v) =>
@@ -30,32 +34,41 @@ class TeamSetup {
       ? null
       : xi.firstWhere((p) => p.posid == 1, orElse: () => xi.first);
 
+  bool _hasSkill(Player p, int id) => p.habA == id || p.habB == id;
+
   int get attackRating {
     final base = _avg(_att.map((p) => p.ataque));
     final mid = _avg(_mid.map((p) => p.creacion));
-    var v = (base * 0.72 + mid * 0.28).round();
+    var v = (base * 0.72 + mid * 0.28).round() + tacticBonus;
     if (tactics.mentalidad == Mentality.ofensivo) v += 5;
     if (tactics.mentalidad == Mentality.defensivo) v -= 4;
     if (tactics.estilo == Style.directo) v += 2;
+    if (_att.any((p) => _hasSkill(p, 9) || _hasSkill(p, 13) || _hasSkill(p, 24))) {
+      v += 1;
+    }
     return v.clamp(1, 120);
   }
 
   int get midfieldRating {
     final v = _avg(_mid.map((p) => (p.creacion * 2 + p.defensivo) ~/ 3));
-    var r = v;
+    var r = v + (tacticBonus > 0 ? 1 : 0);
     if (tactics.estilo == Style.posesion) r += 4;
     if (tactics.presion == Pressure.alta) r += 2;
+    if (_mid.any((p) => _hasSkill(p, 15) || _hasSkill(p, 16))) r += 1;
     return r.clamp(1, 120);
   }
 
   int get defenseRating {
     final d = _avg(_def.map((p) => p.defensivo));
     final gk = _gk?.kiper ?? 40;
-    var v = (d * 0.78 + gk * 0.22).round();
+    var v = (d * 0.78 + gk * 0.22).round() + (tacticBonus > 0 ? 1 : 0);
     if (tactics.mentalidad == Mentality.defensivo) v += 5;
     if (tactics.mentalidad == Mentality.ofensivo) v -= 4;
     if (tactics.linea <= 2) v += 3;
     if (tactics.linea >= 4) v -= 2;
+    if (_def.any((p) => _hasSkill(p, 6) || _hasSkill(p, 7) || _hasSkill(p, 11))) {
+      v += 1;
+    }
     return v.clamp(1, 120);
   }
 
@@ -96,7 +109,8 @@ class LiveMatchSession {
   final Random rng;
 
   int minute = 0;
-  late final int totalMinutes;
+  late int totalMinutes;
+  bool inExtraTime = false;
   int homeGoals = 0;
   int awayGoals = 0;
   int homeShots = 0;
@@ -280,7 +294,12 @@ class LiveMatchSession {
               : 1.0;
       for (final p in sideTeam.xi) {
         final fisMult = 1.18 - (p.fisik / 220);
-        final drain = (p.posid == 1 ? 0.08 : 0.42) * pressMult * fisMult;
+        final workhorse = (p.habA == 17 || p.habB == 17) ? 0.75 : 1.0;
+        final drain = (p.posid == 1 ? 0.08 : 0.42) *
+            pressMult *
+            fisMult *
+            workhorse *
+            sideTeam.staminaDrainFactor;
         stamina[p.jugid] = ((stamina[p.jugid] ?? 100.0) - drain).clamp(15.0, 100.0);
         final st = stats[p.jugid];
         if (st != null) st.minutos++;
@@ -329,14 +348,30 @@ class LiveMatchSession {
       if (attackers.isEmpty) continue;
       final shooter = _pickWeighted(
           attackers,
-          (p) =>
-              (p.posid >= 9 ? 3.4 : p.posid >= 5 ? 1.5 : 0.7) *
-              (0.5 + p.poder / 100) *
-              (0.75 + (stamina[p.jugid] ?? 100) / 400));
+          (p) {
+            final finisher = (p.habA == 9 ||
+                    p.habB == 9 ||
+                    p.habA == 13 ||
+                    p.habB == 13 ||
+                    p.habA == 24 ||
+                    p.habB == 24)
+                ? 1.22
+                : 1.0;
+            return (p.posid >= 9 ? 3.4 : p.posid >= 5 ? 1.5 : 0.7) *
+                (0.5 + p.poder / 100) *
+                (0.75 + (stamina[p.jugid] ?? 100) / 400) *
+                finisher;
+          });
       final mates = attackers.where((p) => p.jugid != shooter.jugid).toList();
       final assister = mates.isEmpty
           ? null
-          : _pickWeighted(mates, (p) => p.posid >= 5 ? 2.2 : 0.8);
+          : _pickWeighted(
+              mates,
+              (p) =>
+                  (p.posid >= 5 ? 2.2 : 0.8) *
+                  ((p.habA == 16 || p.habB == 16 || p.habA == 15 || p.habB == 15)
+                      ? 1.35
+                      : 1.0));
 
       if (isHome) {
         homeShots++;
@@ -346,11 +381,12 @@ class LiveMatchSession {
       stats[shooter.jugid]?.tiros++;
 
       final gk = dfn.xi.firstWhere((p) => p.posid == 1, orElse: () => dfn.xi.first);
+      final gkSkillBonus = (gk.habA == 1 || gk.habB == 1) ? 3 : 0;
       final quality =
           shooter.ataque + (atk.attackRating - dfn.defenseRating) * 0.55;
       final roll = rng.nextDouble() * 100 + _gauss(0, 7);
       final onTargetChance =
-          (0.44 + (quality - gk.kiper) / 260).clamp(0.24, 0.76);
+          (0.44 + (quality - (gk.kiper + gkSkillBonus)) / 260).clamp(0.24, 0.76);
       final onTarget = rng.nextDouble() < onTargetChance;
 
       if (!onTarget) {
@@ -379,8 +415,11 @@ class LiveMatchSession {
         awayOnTarget++;
       }
 
+      final shooterBoost = (shooter.habA == 9 || shooter.habB == 9) ? 0.03 : 0.0;
       final goalChance =
-          (0.275 + (quality - (dfn.defenseRating + gk.kiper) / 2) / 240)
+          (0.275 +
+                  shooterBoost +
+                  (quality - (dfn.defenseRating + gk.kiper + gkSkillBonus) / 2) / 240)
               .clamp(0.08, 0.52);
       if (roll < goalChance * 100) {
         if (isHome) {
@@ -536,6 +575,21 @@ class LiveMatchSession {
       }
     }
 
+    // Cek apakah laga gugur seri di menit akhir 90+ -> lanjut Perpanjangan Waktu 2x15 menit
+    if (minute >= totalMinutes && needWinner && !inExtraTime && homeGoals == awayGoals) {
+      inExtraTime = true;
+      totalMinutes = minute + 30;
+      final evEt = MatchEvent(
+        minute,
+        'babak_tambahan',
+        null,
+        null,
+        'Skor imbang $homeGoals-$awayGoals! Pertandingan berlanjut ke Perpanjangan Waktu!',
+      );
+      events.add(evEt);
+      newEvents.add(evEt);
+    }
+
     return newEvents;
   }
 
@@ -565,14 +619,18 @@ class LiveMatchSession {
 
     var penHome = 0, penAway = 0;
     if (needWinner && homeGoals == awayGoals) {
+      final homeGk = home.xi.firstWhere((p) => p.posid == 1, orElse: () => home.xi.first);
+      final awayGk = away.xi.firstWhere((p) => p.posid == 1, orElse: () => away.xi.first);
+      final awaySavePenalty = (homeGk.habA == 2 || homeGk.habB == 2) ? 0.08 : 0.0;
+      final homeSavePenalty = (awayGk.habA == 2 || awayGk.habB == 2) ? 0.08 : 0.0;
       events.add(MatchEvent(totalMinutes, 'penalti_keputusan', null, null,
-          'Skor imbang, pertandingan dilanjutkan ke adu penalti!'));
+          'Skor masih imbang setelah perpanjangan waktu, lanjut ke adu penalti!'));
       while (penHome == penAway) {
         penHome = 0;
         penAway = 0;
         for (var i = 0; i < 5; i++) {
-          if (rng.nextDouble() < 0.76) penHome++;
-          if (rng.nextDouble() < 0.74) penAway++;
+          if (rng.nextDouble() < (0.76 - homeSavePenalty)) penHome++;
+          if (rng.nextDouble() < (0.74 - awaySavePenalty)) penAway++;
         }
       }
       events.add(MatchEvent(totalMinutes, 'penalti_gol', penHome > penAway ? 0 : 1, null,

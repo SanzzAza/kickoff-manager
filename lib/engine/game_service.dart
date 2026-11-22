@@ -48,7 +48,10 @@ class GameService {
     required String managerName,
     required String leagueName,
     required String clubName,
+    ManagerProfile? profile,
   }) async {
+    final effProfile = (profile ?? ManagerProfile(name: managerName))
+        .copyWith(name: managerName);
     final leagueIdx = leagues.indexWhere((l) => l.name == leagueName);
     final liga = leagues[leagueIdx >= 0 ? leagueIdx : 0];
     final gen = WorldGenerator(db);
@@ -66,8 +69,17 @@ class GameService {
         where: 'equi_is_user = 1', whereArgs: []);
     final userEquid = rows.first['equid'] as int;
 
+    // Bonus Trait: Negosiator (+15% kas awal)
+    if (effProfile.trait == ManagerTrait.negotiator) {
+      final curBudget = (rows.first['equi_presupuesto'] as int?) ?? 0;
+      await db.update('eq_equipos',
+          {'equi_presupuesto': (curBudget * 1.15).round()},
+          where: 'equid = ?', whereArgs: [userEquid]);
+    }
+
     await world.setState('started', '1');
     await world.setState('manager', managerName);
+    await world.setState('manager_profile', jsonEncode(effProfile.toJson()));
     await world.setState('league', liga.name);
     await world.setState('country', liga.country);
     await world.setInt('user_equid', userEquid);
@@ -80,9 +92,16 @@ class GameService {
     await world.setInt('training', 0); // 0 seimbang,1 fisik,2 teknis,3 taktik
 
     await startSeason(2026, first: true);
+    if (effProfile.trait == ManagerTrait.scout) {
+      await world.setInt('academy_level', 2);
+    } else if (effProfile.trait == ManagerTrait.motivator) {
+      await world.setInt('morale', 88);
+    }
+
     await world.addMessage(
       'Selamat datang, $managerName!',
-      'Kamu resmi menjadi manajer $clubName di ${liga.name}. '
+      'Kamu resmi menjadi manajer $clubName di ${liga.name} '
+          '(${effProfile.trait.label}). '
           'Target dari direksi: finis di 10 besar. Pasar transfer terbuka sampai pekan 1.',
       'info',
       0,
@@ -277,6 +296,9 @@ class GameService {
     await world.setInt('sponsor_target', 0);
     await world.setState('pending_offer', '');
     await world.setInt('total_weeks', totalWeeks);
+    await world.setInt('friendly_count', 0);
+    await world.setInt('custom_academy_used', 0);
+    await world.setInt('super_cup_played', 0);
   }
 
   Future<int> _continentalTorneoId(String confed) async {
@@ -384,6 +406,13 @@ class GameService {
   // ---------------- MATCH PREPARATION ----------------
 
   Future<TeamSetup> buildSetup(Team team, Tactics tac, {bool autoXI = true}) async {
+    final st = await world.state();
+    final isUser = team.equid == st.i('user_equid');
+    final profile = st.managerProfile();
+    final tacticBonus = isUser && profile.trait == ManagerTrait.tactician ? 3 : 0;
+    final staminaDrainFactor =
+        isUser && profile.trait == ManagerTrait.motivator ? 0.85 : 1.0;
+
     final squad = await world.squad(team.equid);
     var xi = squad.where((p) => p.disponible && p.posid == 1).toList()
       ..sort((a, b) {
@@ -414,6 +443,8 @@ class GameService {
         tactics: tac,
         clubPower: team.poder,
         name: team.nombre,
+        tacticBonus: tacticBonus,
+        staminaDrainFactor: staminaDrainFactor,
       );
     }
     final roles = tac.formacion.roles;
@@ -448,6 +479,8 @@ class GameService {
       tactics: tac,
       clubPower: team.poder,
       name: team.nombre,
+      tacticBonus: tacticBonus,
+      staminaDrainFactor: staminaDrainFactor,
     );
   }
 
@@ -1501,7 +1534,8 @@ class GameService {
         {'equi_presupuesto': user.presupuesto + prize + sponsorBonus},
         where: 'equid = ?', whereArgs: [userEquid]);
 
-    // premi pemain
+    // premi pemain lengkap (Top Skor, Raja Assist, Bola Emas, Sarung Tangan Emas, Pemain Muda)
+    final scorerGoalsMap = await world.scorerGoals(tempid);
     if (topScorer != null) {
       await db.insert('jug_premios', {
         'jugid': topScorer.jugid,
@@ -1509,13 +1543,91 @@ class GameService {
         'tipo': 'pichichi',
         'anio': year,
         'tempid': tempid,
-        'goles': (await world.scorerGoals(tempid))[topScorer.jugid] ?? 0,
+        'goles': scorerGoalsMap[topScorer.jugid] ?? 0,
       });
     }
+    final topAssists = await world.topAssisters(tempid, limit: 1);
+    final topAssister = topAssists.isNotEmpty ? topAssists.first : null;
+    final assistMap = await world.assisterCounts(tempid);
+    final topAssistCount = topAssister != null ? (assistMap[topAssister.jugid] ?? 0) : 0;
+    if (topAssister != null) {
+      await db.insert('jug_premios', {
+        'jugid': topAssister.jugid,
+        'equid': await world.teamOfPlayer(topAssister.jugid),
+        'tipo': 'assist_king',
+        'anio': year,
+        'tempid': tempid,
+        'goles': topAssistCount,
+      });
+    }
+
+    final bestPlayerRows = await db.rawQuery('''
+      SELECT j.*, COALESCE(s.js_goles, 0) g, COALESCE(s.js_asistencias, 0) a,
+             COALESCE(s.js_mvps, 0) m
+      FROM jug_jugadores j
+      LEFT JOIN jus_stats s ON s.js_jugid = j.jugid AND s.js_tempid = ?
+      WHERE j.jug_jstdid = 1
+      ORDER BY (j.jug_poder + COALESCE(s.js_goles, 0) * 2 + COALESCE(s.js_asistencias, 0) + COALESCE(s.js_mvps, 0) * 3) DESC
+      LIMIT 1
+    ''', [tempid]);
+    final bestPlayerName = bestPlayerRows.isNotEmpty
+        ? bestPlayerRows.first['jug_nombre'] as String
+        : champion.nombre;
+    if (bestPlayerRows.isNotEmpty) {
+      final bpId = bestPlayerRows.first['jugid'] as int;
+      await db.insert('jug_premios', {
+        'jugid': bpId,
+        'equid': await world.teamOfPlayer(bpId),
+        'tipo': 'ballon_dor',
+        'anio': year,
+        'tempid': tempid,
+        'goles': bestPlayerRows.first['jug_poder'] as int? ?? 80,
+      });
+    }
+
+    final bestGkRows = await db.query('jug_jugadores',
+        where: 'jug_jstdid = 1 AND jug_posid = 1',
+        orderBy: '(jug_kiper + jug_poder) DESC',
+        limit: 1);
+    final bestGkName =
+        bestGkRows.isNotEmpty ? bestGkRows.first['jug_nombre'] as String : '-';
+    if (bestGkRows.isNotEmpty) {
+      final gkId = bestGkRows.first['jugid'] as int;
+      await db.insert('jug_premios', {
+        'jugid': gkId,
+        'equid': await world.teamOfPlayer(gkId),
+        'tipo': 'golden_glove',
+        'anio': year,
+        'tempid': tempid,
+        'goles': bestGkRows.first['jug_kiper'] as int? ?? 75,
+      });
+    }
+
+    final youngRows = await db.query('jug_jugadores',
+        where: 'jug_jstdid = 1 AND jug_edad <= 21',
+        orderBy: '(jug_poder * 2 + jug_potencial) DESC',
+        limit: 1);
+    final youngName =
+        youngRows.isNotEmpty ? youngRows.first['jug_nombre'] as String : '-';
+    if (youngRows.isNotEmpty) {
+      final yId = youngRows.first['jugid'] as int;
+      await db.insert('jug_premios', {
+        'jugid': yId,
+        'equid': await world.teamOfPlayer(yId),
+        'tipo': 'golden_boy',
+        'anio': year,
+        'tempid': tempid,
+        'goles': youngRows.first['jug_poder'] as int? ?? 70,
+      });
+    }
+
     if (champion.equid == userEquid) {
       await world.setInt('trophies', st.i('trophies') + 1);
+      await world.setInt('reputation', (st.i('reputation') + 10).clamp(10, 99));
       await db.update('eq_equipos', {'equi_rep': 95},
           where: 'equid = ?', whereArgs: [userEquid]);
+    } else if (userPos <= 4) {
+      await world.setInt('reputation', (st.i('reputation') + 4).clamp(10, 99));
     }
     await db.insert('historial_temporadas', {
       'hist_tempid': tempid,
@@ -1527,9 +1639,9 @@ class GameService {
       'hist_user_equid': userEquid,
       'hist_goleador': topScorer?.nombre ?? '-',
       'hist_goles': topScorer != null
-          ? (await world.scorerGoals(tempid))[topScorer.jugid] ?? 0
+          ? scorerGoalsMap[topScorer.jugid] ?? 0
           : 0,
-      'hist_mvp': champion.nombre,
+      'hist_mvp': bestPlayerName,
     });
 
     // naikkan umur & pensiun
@@ -1600,9 +1712,15 @@ class GameService {
       'championEquid': champion.equid,
       'scorer': topScorer?.nombre ?? '-',
       'scorerGoals': topScorer != null
-          ? (await world.scorerGoals(tempid))[topScorer.jugid] ?? 0
+          ? (scorerGoalsMap[topScorer.jugid] ?? 0)
           : 0,
+      'assister': topAssister?.nombre ?? '-',
+      'assisterCount': topAssistCount,
+      'bestPlayer': bestPlayerName,
+      'bestGk': bestGkName,
+      'youngPlayer': youngName,
       'prize': prize,
+      'sponsorBonus': sponsorBonus,
       'championUser': champion.equid == userEquid,
       'table': table,
       'sacked': sacked,
@@ -2191,6 +2309,311 @@ class GameService {
       'tra_semana': week,
       'tra_nombre': r['jug_nombre'],
     });
+  }
+
+  // ---------------- FRIENDLY, SUPER CUP, CUSTOM YOUTH, JOBS, EDITOR ----------------
+
+  Future<Map<String, dynamic>> friendlyInfo() async {
+    final st = await world.state();
+    final user = await userTeam();
+    final used = st.i('friendly_count');
+    final oppRows = await db.query(
+      'eq_equipos',
+      where: 'equid != ?',
+      whereArgs: [user.equid],
+      orderBy: 'RANDOM()',
+      limit: 12,
+    );
+    return {
+      'used': used,
+      'max': 5,
+      'remaining': max(0, 5 - used),
+      'opponents': oppRows.map(world.teamFromRow).toList(),
+    };
+  }
+
+  Future<Map<String, dynamic>> playFriendly(int opponentEquid) async {
+    final st = await world.state();
+    final used = st.i('friendly_count');
+    if (used >= 5) {
+      return {'error': 'Batas 5 laga uji coba per musim sudah tercapai.'};
+    }
+    final user = await userTeam();
+    final opp = await world.team(opponentEquid);
+    if (opp == null) return {'error': 'Klub lawan tidak ditemukan.'};
+    final tac = st.tactics();
+    final hSetup = await buildSetup(user, tac);
+    final aSetup = await buildSetup(opp, Tactics());
+    final res = engine.simulate(hSetup, aSetup, needWinner: false);
+
+    final gate = (user.poder * 18000).round();
+    await db.update('eq_equipos',
+        {'equi_presupuesto': user.presupuesto + gate},
+        where: 'equid = ?', whereArgs: [user.equid]);
+    final deltaMorale = res.homeGoals > res.awayGoals
+        ? 3
+        : (res.homeGoals == res.awayGoals ? 1 : -1);
+    final curMorale = st['morale'] != null ? st.i('morale') : 70;
+    await world.setInt('morale', (curMorale + deltaMorale).clamp(20, 99));
+    await world.setInt('friendly_count', used + 1);
+
+    await world.addMessage(
+      'Uji Coba: ${user.nombre} ${res.homeGoals}-${res.awayGoals} ${opp.nombre}',
+      'Pertandingan persahabatan selesai. Pemasukan tiket ${_fmt(gate)}.',
+      'info',
+      st.i('week'),
+    );
+    return {
+      'home': user.nombre,
+      'away': opp.nombre,
+      'hg': res.homeGoals,
+      'ag': res.awayGoals,
+      'gate': gate,
+      'events': res.events.take(8).toList(),
+    };
+  }
+
+  Future<Map<String, dynamic>?> superCupInfo() async {
+    final st = await world.state();
+    if (st.i('super_cup_played') == 1) return null;
+    final lastPos = st.i('last_league_pos');
+    if (lastPos <= 0 || lastPos > 2) return null;
+    final user = await userTeam();
+    final rivals = await db.query(
+      'eq_equipos',
+      where: 'equi_paid = ? AND equid != ?',
+      whereArgs: [user.paid, user.equid],
+      orderBy: 'equi_poder DESC',
+      limit: 3,
+    );
+    if (rivals.isEmpty) return null;
+    final opp = world.teamFromRow(rivals.first);
+    return {'opponent': opp, 'prize': (user.poder * 60000).round()};
+  }
+
+  Future<Map<String, dynamic>> playSuperCup() async {
+    final info = await superCupInfo();
+    if (info == null) return {'error': 'Piala Super tidak tersedia saat ini.'};
+    final st = await world.state();
+    final user = await userTeam();
+    final opp = info['opponent'] as Team;
+    final prize = info['prize'] as int;
+    final res = engine.simulate(
+      await buildSetup(user, st.tactics()),
+      await buildSetup(opp, Tactics()),
+      needWinner: true,
+    );
+    final userWon = res.homeGoals > res.awayGoals ||
+        (res.homeGoals == res.awayGoals &&
+            (res.penHome ?? 0) > (res.penAway ?? 0));
+    await world.setInt('super_cup_played', 1);
+    if (userWon) {
+      await world.setInt('trophies', st.i('trophies') + 1);
+      await db.update('eq_equipos',
+          {'equi_presupuesto': user.presupuesto + prize},
+          where: 'equid = ?', whereArgs: [user.equid]);
+    }
+    await world.addMessage(
+      userWon ? 'JUARA PIALA SUPER!' : 'Piala Super Selesai',
+      '${user.nombre} ${res.homeGoals}-${res.awayGoals} ${opp.nombre}'
+          '${res.penHome != null ? ' (Pen ${res.penHome}-${res.penAway})' : ''}. '
+          '${userWon ? 'Trofi Piala Super + hadiah ${_fmt(prize)} diraih!' : 'Tetap fokus menghadapi musim baru.'}',
+      'season',
+      st.i('week'),
+    );
+    return {
+      'home': user.nombre,
+      'away': opp.nombre,
+      'hg': res.homeGoals,
+      'ag': res.awayGoals,
+      'penHome': res.penHome,
+      'penAway': res.penAway,
+      'won': userWon,
+      'prize': userWon ? prize : 0,
+    };
+  }
+
+  Future<String> createCustomAcademyPlayer({
+    required String nombre,
+    required int edad,
+    required int posid,
+    required String perfil,
+    required int skillId,
+    required int numero,
+  }) async {
+    final st = await world.state();
+    if (st.i('custom_academy_used') >= 1) {
+      return 'Pemain kustom akademi sudah dibuat musim ini (maks 1 per musim).';
+    }
+    final userEquid = st.i('user_equid');
+    final squad = await world.squad(userEquid);
+    if (squad.length >= 30) return 'Skuad penuh (maks 30 pemain).';
+
+    final level = max(1, st.i('academy_level'));
+    final basePoder = (60 + level * 2).clamp(58, 72);
+    final pot = (84 + level * 2).clamp(84, 96);
+    final valor = _valueFor(basePoder, edad, pot);
+    final maxRow =
+        await db.rawQuery('SELECT COALESCE(MAX(jugid), 1) m FROM jug_jugadores');
+    final nextId = ((maxRow.first['m'] as int?) ?? 1) + 1;
+    final paid = max(1, leagues.indexWhere((l) => l.name == st['league']) + 1);
+
+    await db.insert('jug_jugadores', {
+      'jugid': nextId,
+      'jug_nombre': nombre.trim().isEmpty ? 'Bintang Muda' : nombre.trim(),
+      'jug_edad': edad.clamp(16, 21),
+      'jug_estatura': 176,
+      'jug_star': 1,
+      'jug_valor': valor,
+      'jug_salario': max(3000, (valor / 240).round()),
+      'jug_perfil': perfil == 'I' ? 'I' : 'D',
+      'jug_experiencia': 1,
+      'jug_condicion': 100,
+      'jug_jstdid': 1,
+      'jug_poder': basePoder,
+      'jug_potencial': pot,
+      'jug_mercado': 0,
+      'jug_paid': paid,
+      'jug_posid': posid,
+      'jug_titular': 0,
+      'jug_capitan': 0,
+      'jug_numero': numero.clamp(1, 99),
+      'jug_campeonatos': 0,
+      'jug_pts': 0,
+      'jug_habilidad_A': skillId,
+      'jug_habilidad_B': 17,
+      'jug_ritmo': basePoder + 4,
+      'jug_tiro': posid >= 9 ? basePoder + 5 : basePoder - 4,
+      'jug_pase': posid >= 5 && posid <= 8 ? basePoder + 5 : basePoder,
+      'jug_regate': basePoder + 3,
+      'jug_defensa': posid >= 2 && posid <= 4 ? basePoder + 5 : basePoder - 8,
+      'jug_fisico': basePoder + 2,
+      'jug_kiper': posid == 1 ? basePoder + 4 : 30,
+      'jug_lesion': 0,
+      'jug_susp': 0,
+    });
+    await db.insert('eq_equipos_jugadores',
+        {'eqju_equid': userEquid, 'eqju_jugid': nextId});
+    await db.insert('jug_contratos', {
+      'jc_jugid': nextId,
+      'jc_equid': userEquid,
+      'jc_inicio': st.i('season_year'),
+      'jc_fin': st.i('season_year') + 5,
+      'jc_status': 1,
+      'jc_salario': max(3000, (valor / 240).round()),
+    });
+    await world.setInt('custom_academy_used', 1);
+    await world.addMessage(
+      'Talenta Kustom Akademi: $nombre',
+      '$nombre ($edad th, OVR $basePoder, POT $pot) resmi bergabung ke skuad utama!',
+      'info',
+      st.i('week'),
+    );
+    return '$nombre berhasil dibuat & masuk skuad utama!';
+  }
+
+  Future<List<Map<String, dynamic>>> availableJobs({String? leagueFilter}) async {
+    final st = await world.state();
+    final userEquid = st.i('user_equid');
+    final rep = st.i('reputation');
+    final trophies = st.i('trophies');
+    final maxPoder = (rep + 22 + trophies * 5).clamp(68, 99);
+    final rows = await db.query('eq_equipos',
+        where: 'equid != ?', whereArgs: [userEquid], orderBy: 'equi_poder DESC');
+    final out = <Map<String, dynamic>>[];
+    for (final r in rows) {
+      final paid = (r['equi_paid'] as int?) ?? 1;
+      final liga = leagues[(paid - 1).clamp(0, leagues.length - 1)];
+      if (leagueFilter != null && leagueFilter != liga.name) continue;
+      final team = world.teamFromRow(r);
+      out.add({
+        'team': team,
+        'league': liga.name,
+        'country': countryLabel(liga.country),
+        'unlocked': team.poder <= maxPoder,
+      });
+    }
+    return out;
+  }
+
+  Future<String> resignAndJoin(int targetEquid) async {
+    final st = await world.state();
+    final t = await world.team(targetEquid);
+    if (t == null) return 'Klub tidak ditemukan.';
+    final oldLeague = st['league'];
+    final liga = leagues[(t.paid - 1).clamp(0, leagues.length - 1)];
+
+    await db.update('eq_equipos', {'equi_is_user': 0}, where: '1 = 1');
+    await db.update('eq_equipos', {'equi_is_user': 1},
+        where: 'equid = ?', whereArgs: [targetEquid]);
+    await world.setInt('user_equid', targetEquid);
+    await world.setState('league', liga.name);
+    await world.setState('country', liga.country);
+    await world.setInt('confidence', 72);
+
+    if (oldLeague != liga.name) {
+      await startSeason(st.i('season_year'), first: false);
+    }
+
+    await world.addMessage(
+      'Babak Baru: ${t.nombre}',
+      'Kamu resmi menerima kontrak melatih ${t.nombre} (${liga.name}).',
+      'info',
+      st.i('week'),
+    );
+    return 'Kamu resmi menjadi manajer ${t.nombre}!';
+  }
+
+  Future<void> updateClubInfo(int equid,
+      {required String nombre,
+      required String abrev,
+      required String colorA,
+      required String colorB}) async {
+    await db.update(
+        'eq_equipos',
+        {
+          'equi_nombre': nombre.trim(),
+          'equi_abrev': abrev.trim().toUpperCase(),
+          'equi_color_a': colorA,
+          'equi_color_b': colorB,
+        },
+        where: 'equid = ?',
+        whereArgs: [equid]);
+  }
+
+  Future<void> updatePlayerInfo(int jugid,
+      {required String nombre,
+      required int posid,
+      required int numero,
+      required int poder}) async {
+    final p = poder.clamp(40, 99);
+    await db.update(
+        'jug_jugadores',
+        {
+          'jug_nombre': nombre.trim(),
+          'jug_posid': posid,
+          'jug_numero': numero.clamp(1, 99),
+          'jug_poder': p,
+          'jug_ritmo': p,
+          'jug_tiro': posid >= 9 ? p + 2 : p - 4,
+          'jug_pase': p,
+          'jug_regate': p,
+          'jug_defensa': posid <= 4 ? p + 2 : p - 6,
+          'jug_kiper': posid == 1 ? p + 2 : 30,
+        },
+        where: 'jugid = ?',
+        whereArgs: [jugid]);
+  }
+
+  Future<List<Map<String, dynamic>>> allSeasonAwards() async {
+    return db.rawQuery('''
+      SELECT pr.*, j.jug_nombre, e.equi_nombre
+      FROM jug_premios pr
+      LEFT JOIN jug_jugadores j ON j.jugid = pr.jugid
+      LEFT JOIN eq_equipos e ON e.equid = pr.equid
+      ORDER BY pr.anio DESC, pr.premid ASC
+      LIMIT 40
+    ''');
   }
 
   // ---------------- MISC ----------------

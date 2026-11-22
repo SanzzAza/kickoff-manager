@@ -440,3 +440,131 @@ class MatchResult {
     this.penAway,
   });
 }
+
+// ============ Profil & Avatar Manajer ============
+
+enum ManagerTrait {
+  tactician('Ahli Taktik', '+3 efektivitas formasi & taktik laga', 'Taktik +3'),
+  scout('Pemburu Bakat', 'Akademi langsung Lv 2 & potensi wonderkid +2', 'Akademi Lv 2'),
+  negotiator('Negosiator Ulung', 'Kas awal +15% & diskon biaya transfer 10%', 'Kas +15%'),
+  motivator('Motivator', 'Moral awal 88 & stamina pemain lebih awet', 'Moral 88');
+
+  final String label;
+  final String desc;
+  final String badge;
+  const ManagerTrait(this.label, this.desc, this.badge);
+
+  static ManagerTrait fromName(String? s) =>
+      ManagerTrait.values.firstWhere((e) => e.name == s, orElse: () => ManagerTrait.tactician);
+}
+
+class ManagerProfile {
+  final String name;
+  final String nationality; // kode ISO2: ID, ES, GB, IT, DE, FR, BR, AR, JP
+  final int hairStyle; // 0..5
+  final int skinTone; // 0..4
+  final int outfitStyle; // 0=jas, 1=tracksuit, 2=turtleneck, 3=polo
+  final int suitColor; // 0..5
+  final bool glasses;
+  final bool beard;
+  final ManagerTrait trait;
+
+  const ManagerProfile({
+    required this.name,
+    this.nationality = 'ID',
+    this.hairStyle = 1,
+    this.skinTone = 2,
+    this.outfitStyle = 0,
+    this.suitColor = 0,
+    this.glasses = false,
+    this.beard = false,
+    this.trait = ManagerTrait.tactician,
+  });
+
+  ManagerProfile copyWith({
+    String? name,
+    String? nationality,
+    int? hairStyle,
+    int? skinTone,
+    int? outfitStyle,
+    int? suitColor,
+    bool? glasses,
+    bool? beard,
+    ManagerTrait? trait,
+  }) =>
+      ManagerProfile(
+        name: name ?? this.name,
+        nationality: nationality ?? this.nationality,
+        hairStyle: hairStyle ?? this.hairStyle,
+        skinTone: skinTone ?? this.skinTone,
+        outfitStyle: outfitStyle ?? this.outfitStyle,
+        suitColor: suitColor ?? this.suitColor,
+        glasses: glasses ?? this.glasses,
+        beard: beard ?? this.beard,
+        trait: trait ?? this.trait,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'nationality': nationality,
+        'hairStyle': hairStyle,
+        'skinTone': skinTone,
+        'outfitStyle': outfitStyle,
+        'suitColor': suitColor,
+        'glasses': glasses,
+        'beard': beard,
+        'trait': trait.name,
+      };
+
+  factory ManagerProfile.fromJson(Map<String, dynamic> j) => ManagerProfile(
+        name: (j['name'] as String?) ?? 'Pelatih',
+        nationality: (j['nationality'] as String?) ?? 'ID',
+        hairStyle: (j['hairStyle'] as int?) ?? 1,
+        skinTone: (j['skinTone'] as int?) ?? 2,
+        outfitStyle: (j['outfitStyle'] as int?) ?? 0,
+        suitColor: (j['suitColor'] as int?) ?? 0,
+        glasses: (j['glasses'] as bool?) ?? false,
+        beard: (j['beard'] as bool?) ?? false,
+        trait: ManagerTrait.fromName(j['trait'] as String?),
+      );
+}
+
+// ============ Skill Spesial Pemain ============
+
+class PlayerSkillInfo {
+  final int id;
+  final String name;
+  final String desc;
+  const PlayerSkillInfo(this.id, this.name, this.desc);
+}
+
+class PlayerSkillCatalog {
+  static const Map<int, PlayerSkillInfo> all = {
+    1: PlayerSkillInfo(1, 'Refleks Kilat', 'Reaksi cepat menepis tembakan jarak dekat'),
+    2: PlayerSkillInfo(2, 'Penepis Penalti', 'Peluang lebih tinggi menggagalkan penalti'),
+    3: PlayerSkillInfo(3, 'Sapuan Bersih', 'Tackle bersih dengan risiko kartu lebih kecil'),
+    6: PlayerSkillInfo(6, 'Tembok Pertahanan', 'Menambah ketangguhan duel lini belakang'),
+    7: PlayerSkillInfo(7, 'Raja Duel Udara', 'Unggul duel bola atas & situasi sepak pojok'),
+    9: PlayerSkillInfo(9, 'Penyelesai Dingin', 'Akurasi tinggi saat berhadapan satu lawan satu'),
+    11: PlayerSkillInfo(11, 'Blokir Tembakan', 'Sering memotong tembakan lawan sebelum masuk'),
+    13: PlayerSkillInfo(13, 'Tendangan Roket', 'Tembakan jarak jauh keras dan berbahaya'),
+    15: PlayerSkillInfo(15, 'Pengatur Tempo', 'Menjaga ritme & penguasaan bola lini tengah'),
+    16: PlayerSkillInfo(16, 'Umpan Terobosan', 'Peluang assist tinggi ke penyerang depan'),
+    17: PlayerSkillInfo(17, 'Pekerja Keras', 'Stamina lebih awet sepanjang pertandingan'),
+    19: PlayerSkillInfo(19, 'Dribel Lincah', 'Mudah melewati bek lawan di sisi sayap/kotak'),
+    23: PlayerSkillInfo(23, 'Spesialis Bola Mati', 'Tendangan bebas & sepak pojok sangat akurat'),
+    24: PlayerSkillInfo(24, 'Pemburu Gol', 'Selalu berada di posisi tepat di kotak penalti'),
+  };
+
+  static PlayerSkillInfo? byId(int id) => all[id];
+
+  static List<PlayerSkillInfo> skillsFor(Player p) {
+    final res = <PlayerSkillInfo>[];
+    final a = all[p.habA];
+    final b = all[p.habB];
+    if (a != null) res.add(a);
+    if (b != null && b.id != a?.id) res.add(b);
+    return res;
+  }
+}
+

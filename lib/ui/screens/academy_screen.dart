@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../data/football_data.dart';
 import '../../engine/game_service.dart';
 import '../../models/models.dart';
 import '../theme.dart';
@@ -97,22 +98,36 @@ class _AcademyScreenState extends State<AcademyScreen> {
             ),
           ),
           const SizedBox(height: 10),
-          ElevatedButton.icon(
-            onPressed: (busy || !canScout)
-                ? null
-                : () async {
-                    setState(() => busy = true);
-                    final msg = await widget.service.scoutAcademy();
-                    setState(() => busy = false);
-                    await _load();
-                    if (!mounted) return;
-                    ScaffoldMessenger.of(context)
-                        .showSnackBar(SnackBar(content: Text(msg)));
-                  },
-            icon: const Icon(Icons.person_search),
-            label: Text(canScout
-                ? 'CARI WONDERKID BARU'
-                : 'Pemandu Bakat Istirahat (6 pekan)'),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: (busy || !canScout)
+                      ? null
+                      : () async {
+                          setState(() => busy = true);
+                          final msg = await widget.service.scoutAcademy();
+                          setState(() => busy = false);
+                          await _load();
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context)
+                              .showSnackBar(SnackBar(content: Text(msg)));
+                        },
+                  icon: const Icon(Icons.person_search),
+                  label: Text(canScout
+                      ? 'CARI WONDERKID'
+                      : 'Istirahat (6 pekan)'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: busy ? null : _createCustomDialog,
+                  icon: const Icon(Icons.person_add_alt_1, size: 18),
+                  label: const Text('Buat Pemain'),
+                ),
+              ),
+            ],
           ),
           SectionTitle('Calon Pemain Muda (${prospects.length})'),
           if (prospects.isEmpty)
@@ -136,13 +151,15 @@ class _AcademyScreenState extends State<AcademyScreen> {
                     children: [
                       Row(
                         children: [
+                          PlayerAvatar(seed: i + poder + pot, size: 42),
+                          const SizedBox(width: 10),
                           CircleAvatar(
-                            radius: 18,
+                            radius: 15,
                             backgroundColor:
                                 Squads.positionColor(posid).withOpacity(0.18),
                             child: Text(Squads.positionName(posid),
                                 style: TextStyle(
-                                    fontSize: 10,
+                                    fontSize: 9.5,
                                     fontWeight: FontWeight.w800,
                                     color: Squads.positionColor(posid))),
                           ),
@@ -208,5 +225,122 @@ class _AcademyScreenState extends State<AcademyScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _createCustomDialog() async {
+    final nameCtrl = TextEditingController(text: 'Garuda Muda');
+    var edad = 17;
+    var posid = 10;
+    var perfil = 'D';
+    var skillId = 9;
+    var numero = 47;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          title: const Text('Buat Pemain Akademi Kustom'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(labelText: 'Nama Pemain'),
+                ),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<int>(
+                  value: posid,
+                  decoration: const InputDecoration(labelText: 'Posisi'),
+                  items: positions
+                      .map((pos) => DropdownMenuItem(
+                            value: pos.id,
+                            child: Text('${pos.abrev} - ${pos.nombre}'),
+                          ))
+                      .toList(),
+                  onChanged: (v) => setD(() => posid = v ?? posid),
+                ),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<int>(
+                  value: skillId,
+                  decoration: const InputDecoration(labelText: 'Skill Spesial'),
+                  items: PlayerSkillCatalog.all.values
+                      .map((sk) => DropdownMenuItem(
+                            value: sk.id,
+                            child: Text(sk.name),
+                          ))
+                      .toList(),
+                  onChanged: (v) => setD(() => skillId = v ?? skillId),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    ChoiceChip(
+                      label: const Text('Kaki Kanan'),
+                      selected: perfil == 'D',
+                      onSelected: (_) => setD(() => perfil = 'D'),
+                    ),
+                    const SizedBox(width: 8),
+                    ChoiceChip(
+                      label: const Text('Kaki Kiri'),
+                      selected: perfil == 'I',
+                      onSelected: (_) => setD(() => perfil = 'I'),
+                    ),
+                  ],
+                ),
+                Row(
+                  children: [
+                    Text('Umur: $edad th', style: const TextStyle(fontSize: 12)),
+                    Expanded(
+                      child: Slider(
+                        value: edad.toDouble(),
+                        min: 16,
+                        max: 21,
+                        divisions: 5,
+                        onChanged: (v) => setD(() => edad = v.round()),
+                      ),
+                    ),
+                  ],
+                ),
+                Row(
+                  children: [
+                    Text('Nomor: #$numero', style: const TextStyle(fontSize: 12)),
+                    Expanded(
+                      child: Slider(
+                        value: numero.toDouble(),
+                        min: 1,
+                        max: 99,
+                        divisions: 98,
+                        onChanged: (v) => setD(() => numero = v.round()),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Batal')),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Buat & Promosi')),
+          ],
+        ),
+      ),
+    );
+    if (ok == true) {
+      final msg = await widget.service.createCustomAcademyPlayer(
+        nombre: nameCtrl.text,
+        edad: edad,
+        posid: posid,
+        perfil: perfil,
+        skillId: skillId,
+        numero: numero,
+      );
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    }
   }
 }

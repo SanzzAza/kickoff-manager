@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../db/db.dart';
 import '../../engine/game_service.dart';
 import '../../models/models.dart';
 import '../theme.dart';
@@ -448,7 +449,9 @@ class HistoryScreen extends StatefulWidget {
 
 class _HistoryScreenState extends State<HistoryScreen> {
   List<Map<String, dynamic>>? rows;
+  List<Map<String, dynamic>> awards = [];
   Map<String, dynamic>? stats;
+  ManagerProfile? profile;
 
   @override
   void initState() {
@@ -459,11 +462,32 @@ class _HistoryScreenState extends State<HistoryScreen> {
   Future<void> _load() async {
     final r = await widget.service.world.history();
     final st = await widget.service.managerStats();
+    final sv = await widget.service.state();
+    final aw = await widget.service.allSeasonAwards();
     if (!mounted) return;
     setState(() {
       rows = r;
       stats = st;
+      awards = aw;
+      profile = sv.managerProfile();
     });
+  }
+
+  String _awardLabel(String tipo) {
+    switch (tipo) {
+      case 'pichichi':
+        return 'Sepatu Emas (Top Skor)';
+      case 'assist_king':
+        return 'Raja Assist';
+      case 'ballon_dor':
+        return 'Bola Emas (Pemain Terbaik)';
+      case 'golden_glove':
+        return 'Sarung Tangan Emas (Kiper)';
+      case 'golden_boy':
+        return 'Pemain Muda Terbaik U-21';
+      default:
+        return tipo;
+    }
   }
 
   @override
@@ -486,15 +510,29 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           children: [
                             Row(
                               children: [
-                                const Icon(Icons.person_pin,
-                                    color: AppColors.primary, size: 22),
-                                const SizedBox(width: 8),
+                                if (profile != null)
+                                  ManagerAvatar(profile: profile!, size: 46)
+                                else
+                                  const Icon(Icons.person_pin,
+                                      color: AppColors.primary, size: 22),
+                                const SizedBox(width: 10),
                                 Expanded(
-                                  child: Text(
-                                      'Manajer: ${stats!['manager']}',
-                                      style: const TextStyle(
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w900)),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text('Manajer: ${stats!['manager']}',
+                                          style: const TextStyle(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w900)),
+                                      if (profile != null)
+                                        Text(
+                                            '${profile!.nationality} · ${profile!.trait.label}',
+                                            style: const TextStyle(
+                                                fontSize: 11,
+                                                color: AppColors.muted)),
+                                    ],
+                                  ),
                                 ),
                                 Container(
                                   padding: const EdgeInsets.symmetric(
@@ -561,6 +599,28 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       ),
                     );
                   }),
+                if (awards.isNotEmpty) ...[
+                  const SectionTitle('Penghargaan Individu'),
+                  ...awards.take(15).map((aw) => Card(
+                        margin: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 4),
+                        child: ListTile(
+                          dense: true,
+                          leading: const Icon(Icons.military_tech,
+                              color: AppColors.gold, size: 22),
+                          title: Text('${aw['jug_nombre'] ?? '-'}',
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w700, fontSize: 13)),
+                          subtitle: Text(
+                              '${_awardLabel(aw['tipo'] as String)} · ${aw['equi_nombre'] ?? ''}',
+                              style: const TextStyle(
+                                  fontSize: 11, color: AppColors.muted)),
+                          trailing: Text('${aw['anio']}',
+                              style: const TextStyle(
+                                  fontSize: 11, fontWeight: FontWeight.w800)),
+                        ),
+                      )),
+                ],
               ],
             ),
     );
@@ -620,8 +680,26 @@ class SeasonEndScreen extends StatelessWidget {
                   children: [
                     _row('Posisi akhir', '${info['userPos']}'),
                     const Divider(),
-                    _row('Pencetak gol terbanyak',
+                    _row('Sepatu Emas (Top Skor)',
                         '${info['scorer']} (${info['scorerGoals']})'),
+                    if (info['assister'] != null && info['assister'] != '-') ...[
+                      const Divider(),
+                      _row('Raja Assist',
+                          '${info['assister']} (${info['assisterCount']})'),
+                    ],
+                    if (info['bestPlayer'] != null) ...[
+                      const Divider(),
+                      _row('Bola Emas (MVP)', '${info['bestPlayer']}'),
+                    ],
+                    if (info['bestGk'] != null && info['bestGk'] != '-') ...[
+                      const Divider(),
+                      _row('Sarung Tangan Emas', '${info['bestGk']}'),
+                    ],
+                    if (info['youngPlayer'] != null &&
+                        info['youngPlayer'] != '-') ...[
+                      const Divider(),
+                      _row('Pemain Muda Terbaik', '${info['youngPlayer']}'),
+                    ],
                     const Divider(),
                     _row('Hadiah liga', formatMoney(info['prize'] as int)),
                   ],

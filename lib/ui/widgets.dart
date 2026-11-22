@@ -63,26 +63,473 @@ class CrestWidget extends StatelessWidget {
   }
 
   Widget _fallbackCrest(String initials) {
-    return Container(
+    final c1 = _parse(colorA);
+    var c2 = _parse(colorB);
+    if ((c1.value & 0xFFFFFF) == (c2.value & 0xFFFFFF)) {
+      c2 = Colors.white;
+    }
+    final pattern = nombre.codeUnits.fold<int>(0, (a, b) => a + b) % 6;
+    return SizedBox(
       width: size,
       height: size,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [_parse(colorA), _parse(colorA).withOpacity(0.72)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+      child: CustomPaint(
+        painter: _ShieldCrestPainter(c1, c2, pattern),
+        child: Center(
+          child: Padding(
+            padding: EdgeInsets.only(bottom: size * 0.06),
+            child: Text(
+              initials,
+              style: TextStyle(
+                fontSize: size * 0.31,
+                fontWeight: FontWeight.w900,
+                color: Colors.white,
+                letterSpacing: -0.5,
+                shadows: const [
+                  Shadow(color: Colors.black87, blurRadius: 4, offset: Offset(0, 1)),
+                ],
+              ),
+            ),
+          ),
         ),
-        borderRadius: BorderRadius.circular(size * 0.28),
-        border: Border.all(color: _parse(colorB).withOpacity(0.8), width: 1.4),
       ),
-      alignment: Alignment.center,
-      child: Text(initials,
-          style: TextStyle(
-              fontSize: size * 0.36,
-              fontWeight: FontWeight.w900,
-              color: Colors.white)),
     );
   }
+}
+
+class _ShieldCrestPainter extends CustomPainter {
+  final Color primary;
+  final Color secondary;
+  final int pattern;
+  _ShieldCrestPainter(this.primary, this.secondary, this.pattern);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final shield = Path()
+      ..moveTo(w * 0.12, h * 0.08)
+      ..quadraticBezierTo(w * 0.5, h * 0.02, w * 0.88, h * 0.08)
+      ..lineTo(w * 0.88, h * 0.48)
+      ..quadraticBezierTo(w * 0.85, h * 0.78, w * 0.5, h * 0.94)
+      ..quadraticBezierTo(w * 0.15, h * 0.78, w * 0.12, h * 0.48)
+      ..close();
+
+    canvas.save();
+    canvas.clipPath(shield);
+    canvas.drawRect(Offset.zero & size, Paint()..color = primary);
+
+    final sec = Paint()..color = secondary.withOpacity(0.28);
+    final secStrong = Paint()..color = secondary.withOpacity(0.45);
+    switch (pattern) {
+      case 0: // Garis vertikal
+        for (var i = 0; i < 3; i++) {
+          canvas.drawRect(
+              Rect.fromLTWH(w * (0.16 + i * 0.27), 0, w * 0.12, h), sec);
+        }
+        break;
+      case 1: // Setengah-setengah
+        canvas.drawRect(Rect.fromLTWH(w * 0.5, 0, w * 0.5, h), sec);
+        break;
+      case 2: // Diagonal sash
+        final sash = Path()
+          ..moveTo(0, h * 0.75)
+          ..lineTo(w * 0.75, 0)
+          ..lineTo(w, 0)
+          ..lineTo(w, h * 0.25)
+          ..lineTo(w * 0.25, h)
+          ..lineTo(0, h)
+          ..close();
+        canvas.drawPath(sash, secStrong);
+        break;
+      case 3: // Pita horizontal
+        canvas.drawRect(Rect.fromLTWH(0, h * 0.36, w, h * 0.24), secStrong);
+        break;
+      case 4: // Chevron V
+        final chev = Path()
+          ..moveTo(0, h * 0.24)
+          ..lineTo(w * 0.5, h * 0.62)
+          ..lineTo(w, h * 0.24)
+          ..lineTo(w, h * 0.46)
+          ..lineTo(w * 0.5, h * 0.84)
+          ..lineTo(0, h * 0.46)
+          ..close();
+        canvas.drawPath(chev, secStrong);
+        break;
+      default: // Perisai dalam + garis atas
+        canvas.drawRect(Rect.fromLTWH(0, 0, w, h * 0.24), secStrong);
+        break;
+    }
+
+    // Kilau kaca atas
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, w, h * 0.36),
+      Paint()..color = Colors.white.withOpacity(0.08),
+    );
+    canvas.restore();
+
+    // Bingkai luar metalik
+    canvas.drawPath(
+      shield,
+      Paint()
+        ..color = secondary.withOpacity(0.85)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = w * 0.055,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _ShieldCrestPainter old) =>
+      old.primary != primary || old.secondary != secondary || old.pattern != pattern;
+}
+
+class ManagerAvatar extends StatelessWidget {
+  final ManagerProfile profile;
+  final double size;
+  const ManagerAvatar({super.key, required this.profile, this.size = 56});
+
+  static const skinTones = [
+    Color(0xFFF6D5B8),
+    Color(0xFFE4B48C),
+    Color(0xFFC68A5B),
+    Color(0xFF9B643D),
+    Color(0xFF6B4228),
+  ];
+
+  static const suitColors = [
+    Color(0xFF1E293B),
+    Color(0xFF0B5D3B),
+    Color(0xFF1D4ED8),
+    Color(0xFF881337),
+    Color(0xFF4C1D95),
+    Color(0xFF374151),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: ClipOval(
+        child: CustomPaint(
+          painter: _ManagerAvatarPainter(profile),
+        ),
+      ),
+    );
+  }
+}
+
+class _ManagerAvatarPainter extends CustomPainter {
+  final ManagerProfile p;
+  _ManagerAvatarPainter(this.p);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final skin = ManagerAvatar.skinTones[p.skinTone % ManagerAvatar.skinTones.length];
+    final suit = ManagerAvatar.suitColors[p.suitColor % ManagerAvatar.suitColors.length];
+
+    // Latar gradien stadion malam
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()
+        ..shader = const LinearGradient(
+          colors: [Color(0xFF134E3A), Color(0xFF0C1A15)],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ).createShader(Offset.zero & size),
+    );
+
+    // Bahu & busana
+    final body = Path()
+      ..moveTo(w * 0.10, h)
+      ..quadraticBezierTo(w * 0.14, h * 0.66, w * 0.50, h * 0.66)
+      ..quadraticBezierTo(w * 0.86, h * 0.66, w * 0.90, h)
+      ..close();
+    canvas.drawPath(body, Paint()..color = suit);
+
+    if (p.outfitStyle == 0) {
+      // Kemeja + dasi
+      final shirt = Path()
+        ..moveTo(w * 0.39, h * 0.66)
+        ..lineTo(w * 0.50, h * 0.88)
+        ..lineTo(w * 0.61, h * 0.66)
+        ..close();
+      canvas.drawPath(shirt, Paint()..color = Colors.white.withOpacity(0.92));
+      final tie = Path()
+        ..moveTo(w * 0.47, h * 0.68)
+        ..lineTo(w * 0.53, h * 0.68)
+        ..lineTo(w * 0.52, h * 0.96)
+        ..lineTo(w * 0.48, h * 0.96)
+        ..close();
+      canvas.drawPath(tie, Paint()..color = AppColors.accent);
+    } else if (p.outfitStyle == 1) {
+      // Resleting jaket tracksuit
+      canvas.drawLine(
+        Offset(w * 0.50, h * 0.67),
+        Offset(w * 0.50, h),
+        Paint()
+          ..color = Colors.white.withOpacity(0.75)
+          ..strokeWidth = w * 0.035,
+      );
+      canvas.drawRect(
+        Rect.fromLTWH(w * 0.22, h * 0.78, w * 0.14, h * 0.04),
+        Paint()..color = Colors.white.withOpacity(0.4),
+      );
+    } else {
+      // Kerah polo / sweater
+      canvas.drawArc(
+        Rect.fromCenter(center: Offset(w * 0.5, h * 0.67), width: w * 0.24, height: h * 0.12),
+        0,
+        3.14,
+        false,
+        Paint()
+          ..color = Colors.white.withOpacity(0.65)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = w * 0.035,
+      );
+    }
+
+    // Leher
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(center: Offset(w * 0.50, h * 0.62), width: w * 0.16, height: h * 0.16),
+        Radius.circular(w * 0.06),
+      ),
+      Paint()..color = skin.withOpacity(0.9),
+    );
+
+    // Telinga
+    canvas.drawCircle(Offset(w * 0.30, h * 0.44), w * 0.048, Paint()..color = skin);
+    canvas.drawCircle(Offset(w * 0.70, h * 0.44), w * 0.048, Paint()..color = skin);
+
+    // Wajah
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(w * 0.50, h * 0.43), width: w * 0.38, height: h * 0.42),
+      Paint()..color = skin,
+    );
+
+    // Jenggot opsional
+    if (p.beard) {
+      final beardPath = Path()
+        ..moveTo(w * 0.32, h * 0.45)
+        ..quadraticBezierTo(w * 0.50, h * 0.69, w * 0.68, h * 0.45)
+        ..lineTo(w * 0.65, h * 0.58)
+        ..quadraticBezierTo(w * 0.50, h * 0.68, w * 0.35, h * 0.58)
+        ..close();
+      canvas.drawPath(beardPath, Paint()..color = const Color(0xFF1F2937).withOpacity(0.82));
+    }
+
+    // Mata & alis
+    final eyePaint = Paint()..color = const Color(0xFF111827);
+    canvas.drawCircle(Offset(w * 0.42, h * 0.42), w * 0.025, eyePaint);
+    canvas.drawCircle(Offset(w * 0.58, h * 0.42), w * 0.025, eyePaint);
+
+    // Mulut ramah
+    canvas.drawArc(
+      Rect.fromCenter(center: Offset(w * 0.50, h * 0.52), width: w * 0.13, height: h * 0.06),
+      0.15,
+      2.8,
+      false,
+      Paint()
+        ..color = const Color(0xFF5D3A29)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = w * 0.024
+        ..strokeCap = StrokeCap.round,
+    );
+
+    // Kacamata opsional
+    if (p.glasses) {
+      final gp = Paint()
+        ..color = const Color(0xFF0F172A)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = w * 0.022;
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+            Rect.fromCenter(center: Offset(w * 0.42, h * 0.42), width: w * 0.13, height: h * 0.09),
+            Radius.circular(w * 0.02)),
+        gp,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+            Rect.fromCenter(center: Offset(w * 0.58, h * 0.42), width: w * 0.13, height: h * 0.09),
+            Radius.circular(w * 0.02)),
+        gp,
+      );
+      canvas.drawLine(Offset(w * 0.485, h * 0.42), Offset(w * 0.515, h * 0.42), gp);
+    }
+
+    // Rambut (0=rapih belah, 1=modern spike, 2=ikal, 3=topi pelatih, 4=abu veteran, 5=plontos)
+    final hairColor = p.hairStyle == 4 ? const Color(0xFFCBD5E1) : const Color(0xFF1B1E23);
+    final hp = Paint()..color = hairColor;
+    switch (p.hairStyle % 6) {
+      case 0:
+        canvas.drawArc(
+          Rect.fromCenter(center: Offset(w * 0.50, h * 0.31), width: w * 0.40, height: h * 0.26),
+          3.14,
+          3.14,
+          true,
+          hp,
+        );
+        break;
+      case 1:
+        final spike = Path()
+          ..moveTo(w * 0.31, h * 0.34)
+          ..lineTo(w * 0.36, h * 0.17)
+          ..lineTo(w * 0.46, h * 0.22)
+          ..lineTo(w * 0.52, h * 0.14)
+          ..lineTo(w * 0.62, h * 0.21)
+          ..lineTo(w * 0.69, h * 0.34)
+          ..quadraticBezierTo(w * 0.50, h * 0.28, w * 0.31, h * 0.34)
+          ..close();
+        canvas.drawPath(spike, hp);
+        break;
+      case 2:
+        for (final dx in [0.35, 0.43, 0.50, 0.57, 0.65]) {
+          canvas.drawCircle(Offset(w * dx, h * 0.24), w * 0.07, hp);
+        }
+        break;
+      case 3:
+        // Topi pelatih
+        canvas.drawArc(
+          Rect.fromCenter(center: Offset(w * 0.50, h * 0.31), width: w * 0.42, height: h * 0.25),
+          3.14,
+          3.14,
+          true,
+          Paint()..color = suit,
+        );
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromLTWH(w * 0.28, h * 0.29, w * 0.52, h * 0.05),
+            Radius.circular(w * 0.025),
+          ),
+          Paint()..color = AppColors.primary,
+        );
+        break;
+      case 4:
+        canvas.drawArc(
+          Rect.fromCenter(center: Offset(w * 0.50, h * 0.31), width: w * 0.40, height: h * 0.24),
+          3.14,
+          3.14,
+          true,
+          hp,
+        );
+        break;
+      default:
+        // Plontos rapi + kilau kecil
+        canvas.drawCircle(
+          Offset(w * 0.44, h * 0.27),
+          w * 0.03,
+          Paint()..color = Colors.white.withOpacity(0.22),
+        );
+        break;
+    }
+
+    // Ring bingkai lingkaran
+    canvas.drawCircle(
+      Offset(w * 0.5, h * 0.5),
+      w * 0.49,
+      Paint()
+        ..color = AppColors.primary.withOpacity(0.65)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = w * 0.035,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _ManagerAvatarPainter old) => true;
+}
+
+class PlayerAvatar extends StatelessWidget {
+  final int seed;
+  final Color jerseyColor;
+  final double size;
+  const PlayerAvatar({
+    super.key,
+    required this.seed,
+    this.jerseyColor = AppColors.primary,
+    this.size = 56,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final p = ManagerProfile(
+      name: '',
+      hairStyle: seed % 3 == 0 ? 1 : (seed % 3 == 1 ? 2 : 0),
+      skinTone: seed % ManagerAvatar.skinTones.length,
+      outfitStyle: 2,
+      suitColor: 0,
+      beard: seed % 5 == 0,
+      glasses: false,
+    );
+    return SizedBox(
+      width: size,
+      height: size,
+      child: ClipOval(
+        child: CustomPaint(
+          painter: _PlayerAvatarPainter(p, jerseyColor),
+        ),
+      ),
+    );
+  }
+}
+
+class _PlayerAvatarPainter extends CustomPainter {
+  final ManagerProfile p;
+  final Color jersey;
+  _PlayerAvatarPainter(this.p, this.jersey);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final skin = ManagerAvatar.skinTones[p.skinTone % ManagerAvatar.skinTones.length];
+    canvas.drawRect(Offset.zero & size, Paint()..color = AppColors.surface2);
+
+    // Jersey
+    final body = Path()
+      ..moveTo(w * 0.12, h)
+      ..quadraticBezierTo(w * 0.16, h * 0.67, w * 0.5, h * 0.67)
+      ..quadraticBezierTo(w * 0.84, h * 0.67, w * 0.88, h)
+      ..close();
+    canvas.drawPath(body, Paint()..color = jersey);
+    canvas.drawCircle(Offset(w * 0.5, h * 0.44), w * 0.21, Paint()..color = skin);
+
+    // Rambut
+    final hp = Paint()..color = const Color(0xFF1F2937);
+    if (p.hairStyle == 1) {
+      final spike = Path()
+        ..moveTo(w * 0.30, h * 0.36)
+        ..lineTo(w * 0.40, h * 0.18)
+        ..lineTo(w * 0.52, h * 0.15)
+        ..lineTo(w * 0.65, h * 0.22)
+        ..lineTo(w * 0.70, h * 0.36)
+        ..close();
+      canvas.drawPath(spike, hp);
+    } else {
+      canvas.drawArc(
+        Rect.fromCenter(center: Offset(w * 0.5, h * 0.32), width: w * 0.42, height: h * 0.26),
+        3.14,
+        3.14,
+        true,
+        hp,
+      );
+    }
+    final eye = Paint()..color = const Color(0xFF111827);
+    canvas.drawCircle(Offset(w * 0.43, h * 0.43), w * 0.025, eye);
+    canvas.drawCircle(Offset(w * 0.57, h * 0.43), w * 0.025, eye);
+    canvas.drawCircle(
+      Offset(w * 0.5, h * 0.5),
+      w * 0.48,
+      Paint()
+        ..color = jersey.withOpacity(0.7)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = w * 0.04,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _PlayerAvatarPainter old) => old.jersey != jersey;
 }
 
 class PowerBadge extends StatelessWidget {
