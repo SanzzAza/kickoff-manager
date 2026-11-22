@@ -66,16 +66,20 @@ class _MarketScreenState extends State<MarketScreen> {
       appBar: AppBar(
         title: const Text('Pasar Transfer'),
         actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 14),
-            child: Center(
-              child: Text('Kas ${formatMoney(budget)}',
-                  style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.primary)),
+          Container(
+            margin: const EdgeInsets.only(right: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.14),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.primary.withOpacity(0.4)),
             ),
-          )
+            child: Text('Kas ${formatMoney(budget)}',
+                style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    color: AppColors.primary)),
+          ),
         ],
       ),
       body: Column(

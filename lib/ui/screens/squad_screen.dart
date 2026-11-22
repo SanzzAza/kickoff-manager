@@ -61,21 +61,28 @@ class _SquadScreenState extends State<SquadScreen> {
     final avg = squad!.isEmpty
         ? 0
         : (squad!.fold<int>(0, (a, p) => a + p.poder) / squad!.length).round();
+    final avgAge = squad!.isEmpty
+        ? 0
+        : (squad!.fold<int>(0, (a, p) => a + p.edad) / squad!.length).round();
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Skuad'),
         actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: Center(
-              child: Text('AVG $avg',
-                  style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.primary)),
+          Container(
+            margin: const EdgeInsets.only(right: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.14),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.primary.withOpacity(0.4)),
             ),
-          )
+            child: Text('AVG $avg',
+                style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    color: AppColors.primary)),
+          ),
         ],
       ),
       body: Column(
@@ -85,16 +92,13 @@ class _SquadScreenState extends State<SquadScreen> {
             child: Column(
               children: [
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
                   child: Row(
                     children: [
-                      Text('${squad!.length} pemain',
-                          style: const TextStyle(
-                              fontSize: 12, color: AppColors.muted)),
-                      const Spacer(),
-                      Text('Gaji: ${formatMoney(wages)}/musim',
-                          style: const TextStyle(
-                              fontSize: 12, color: AppColors.muted)),
+                      _sqMetric('Pemain', '${squad!.length}'),
+                      _sqMetric('Rata OVR', '$avg'),
+                      _sqMetric('Rata Umur', '$avgAge th'),
+                      _sqMetric('Gaji/Musim', formatMoney(wages)),
                     ],
                   ),
                 ),
@@ -156,6 +160,31 @@ class _SquadScreenState extends State<SquadScreen> {
       ),
     );
   }
+
+  Widget _sqMetric(String label, String value) => Expanded(
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 3),
+          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
+          decoration: BoxDecoration(
+            color: AppColors.surface2,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AppColors.line),
+          ),
+          child: Column(
+            children: [
+              Text(value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 1),
+              Text(label,
+                  style: const TextStyle(
+                      fontSize: 9.5, color: AppColors.muted)),
+            ],
+          ),
+        ),
+      );
 }
 
 class PlayerDetailSheet extends StatefulWidget {

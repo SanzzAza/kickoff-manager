@@ -596,21 +596,37 @@ class PlayerRow extends StatelessWidget {
                         child: Text(p.nombre,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                                fontWeight: FontWeight.w600, fontSize: 14)),
+                                fontWeight: FontWeight.w700, fontSize: 13.8)),
                       ),
                       if (p.capitan == 1) ...[
                         const SizedBox(width: 4),
                         const Icon(Icons.verified, size: 13, color: AppColors.accent),
                       ],
+                      if (p.titular == 1) ...[
+                        const SizedBox(width: 5),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 4, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withOpacity(0.16),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Text('XI',
+                              style: TextStyle(
+                                  fontSize: 8.5,
+                                  fontWeight: FontWeight.w900,
+                                  color: AppColors.primary)),
+                        ),
+                      ],
                     ],
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 4),
                   Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                         decoration: BoxDecoration(
-                            color: Squads.positionColor(p.posid).withOpacity(0.15),
+                            color: Squads.positionColor(p.posid).withOpacity(0.16),
                             borderRadius: BorderRadius.circular(4)),
                         child: Text(Squads.positionName(p.posid),
                             style: TextStyle(
@@ -622,6 +638,29 @@ class PlayerRow extends StatelessWidget {
                       Text('${p.edad} th',
                           style: const TextStyle(
                               fontSize: 11, color: AppColors.muted)),
+                      const SizedBox(width: 6),
+                      Container(
+                        width: 22,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: AppColors.surface2,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                        child: FractionallySizedBox(
+                          alignment: Alignment.centerLeft,
+                          widthFactor: (p.condicion / 100).clamp(0.05, 1.0),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: p.condicion >= 75
+                                  ? AppColors.primary
+                                  : p.condicion >= 50
+                                      ? AppColors.accent
+                                      : AppColors.danger,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                        ),
+                      ),
                       if (p.lesionado) ...[
                         const SizedBox(width: 6),
                         const Icon(Icons.healing, size: 12, color: AppColors.danger),
@@ -700,38 +739,66 @@ class FormationPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final pitch = Paint()..color = const Color(0xFF12402B);
-    canvas.drawRRect(
-        RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(8)), pitch);
+    final rect = RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(14));
+    canvas.save();
+    canvas.clipRRect(rect);
+
+    // Rumput stadion bergaris (2 tone hijau)
+    const bandCount = 10;
+    final bandH = size.height / bandCount;
+    for (var i = 0; i < bandCount; i++) {
+      canvas.drawRect(
+        Rect.fromLTWH(0, i * bandH, size.width, bandH + 0.5),
+        Paint()
+          ..color = i.isEven
+              ? const Color(0xFF0E3D26)
+              : const Color(0xFF13482E),
+      );
+    }
+
     final line = Paint()
-      ..color = Colors.white.withOpacity(0.14)
+      ..color = Colors.white.withOpacity(0.22)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2;
-    canvas.drawRect(Rect.fromLTWH(6, 6, size.width - 12, size.height - 12), line);
-    canvas.drawLine(Offset(6, size.height / 2),
-        Offset(size.width - 6, size.height / 2), line);
-    canvas.drawCircle(Offset(size.width / 2, size.height / 2), size.width * 0.11, line);
-    // kotak penalti
-    final boxW = size.width * 0.44, boxH = size.height * 0.14;
+      ..strokeWidth = 1.4;
+    canvas.drawRect(Rect.fromLTWH(10, 10, size.width - 20, size.height - 20), line);
+    canvas.drawLine(Offset(10, size.height / 2),
+        Offset(size.width - 10, size.height / 2), line);
+    canvas.drawCircle(
+        Offset(size.width / 2, size.height / 2), size.width * 0.12, line);
+    canvas.drawCircle(Offset(size.width / 2, size.height / 2), 2.5,
+        Paint()..color = Colors.white.withOpacity(0.35));
+
+    // Kotak penalti atas & bawah
+    final boxW = size.width * 0.46, boxH = size.height * 0.14;
     canvas.drawRect(
-        Rect.fromLTWH((size.width - boxW) / 2, 6, boxW, boxH), line);
+        Rect.fromLTWH((size.width - boxW) / 2, 10, boxW, boxH), line);
     canvas.drawRect(
-        Rect.fromLTWH((size.width - boxW) / 2, size.height - 6 - boxH, boxW, boxH),
+        Rect.fromLTWH((size.width - boxW) / 2, size.height - 10 - boxH, boxW, boxH),
+        line);
+    // Kotak kiper kecil
+    final smallW = size.width * 0.24, smallH = size.height * 0.055;
+    canvas.drawRect(
+        Rect.fromLTWH((size.width - smallW) / 2, 10, smallW, smallH), line);
+    canvas.drawRect(
+        Rect.fromLTWH(
+            (size.width - smallW) / 2, size.height - 10 - smallH, smallW, smallH),
         line);
 
     final dot = Paint()..color = color;
     for (final s in formation.slots) {
       final o = Offset(s[0] * size.width, s[1] * size.height);
-      canvas.drawCircle(o, 9, Paint()..color = Colors.black.withOpacity(0.35));
-      canvas.drawCircle(o, 7.5, dot);
+      canvas.drawCircle(
+          o + const Offset(0, 2), 11, Paint()..color = Colors.black.withOpacity(0.42));
+      canvas.drawCircle(o, 10, dot);
       canvas.drawCircle(
           o,
-          7.5,
+          10,
           Paint()
-            ..color = Colors.white.withOpacity(0.6)
+            ..color = Colors.white.withOpacity(0.85)
             ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.2);
+            ..strokeWidth = 1.6);
     }
+    canvas.restore();
   }
 
   @override

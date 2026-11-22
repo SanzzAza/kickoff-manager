@@ -130,38 +130,80 @@ class _TacticsScreenState extends State<TacticsScreen> {
                                 fontWeight: FontWeight.w900, fontSize: 15)),
                       ),
                     ),
-                    // nama pemain per slot (ketuk langsung di lapangan untuk tukar)
+                    // nama pemain + nomor + OVR per slot (ketuk langsung di lapangan untuk tukar)
                     ...List.generate(t.formacion.slots.length, (i) {
                       final s = t.formacion.slots[i];
                       final p = i < xi.length ? xi[i] : null;
                       final w = MediaQuery.of(context).size.width - 28;
                       final h = w / 0.72;
+                      final lastName = p == null
+                          ? '-'
+                          : p.nombre.split(' ').last;
+                      final shortName = lastName.length > 9
+                          ? lastName.substring(0, 9)
+                          : lastName;
                       return Positioned(
-                        left: (s[0] * w) - 34,
-                        top: (s[1] * h) - 18,
-                        width: 68,
+                        left: (s[0] * w) - 38,
+                        top: (s[1] * h) - 14,
+                        width: 76,
                         child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           onTap: p == null ? null : () => _pickReplacement(p),
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const SizedBox(height: 22),
-                              Text(
-                                p == null
-                                    ? '-'
-                                    : '${p.capitan == 1 ? "(C) " : ""}${p.nombre.split(' ').last.length > 8 ? p.nombre.split(' ').last.substring(0, 8) : p.nombre.split(' ').last}',
-                                textAlign: TextAlign.center,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                    fontSize: 8.5,
-                                    fontWeight: FontWeight.w800,
+                              Container(
+                                width: 24,
+                                height: 24,
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: p?.posid == 1
+                                      ? AppColors.accent
+                                      : AppColors.primary,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                      color: Colors.white, width: 1.6),
+                                  boxShadow: const [
+                                    BoxShadow(
+                                        color: Colors.black54, blurRadius: 4)
+                                  ],
+                                ),
+                                child: Text(
+                                  p == null ? '-' : '${p.numero}',
+                                  style: const TextStyle(
+                                      fontSize: 9.5,
+                                      fontWeight: FontWeight.w900,
+                                      color: Colors.black),
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 5, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.68),
+                                  borderRadius: BorderRadius.circular(5),
+                                  border: Border.all(
                                     color: p?.capitan == 1
-                                        ? AppColors.gold
-                                        : Colors.white,
-                                    shadows: const [
-                                      Shadow(blurRadius: 3, color: Colors.black)
-                                    ]),
+                                        ? AppColors.gold.withOpacity(0.8)
+                                        : Colors.white24,
+                                    width: 0.7,
+                                  ),
+                                ),
+                                child: Text(
+                                  p == null
+                                      ? '-'
+                                      : '${p.capitan == 1 ? "(C) " : ""}$shortName · ${p.poder}',
+                                  textAlign: TextAlign.center,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                      fontSize: 8.5,
+                                      fontWeight: FontWeight.w800,
+                                      color: p?.capitan == 1
+                                          ? AppColors.gold
+                                          : Colors.white),
+                                ),
                               ),
                             ],
                           ),

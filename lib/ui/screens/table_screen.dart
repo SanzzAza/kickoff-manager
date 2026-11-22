@@ -155,12 +155,29 @@ class _TableScreenState extends State<TableScreen>
           ...t.asMap().entries.map((e) {
             final r = e.value;
             final isUser = r.equid == userEquid;
+            final zoneColor = e.key == 0
+                ? AppColors.gold
+                : e.key < 4
+                    ? AppColors.primary
+                    : e.key > t.length - 4
+                        ? AppColors.danger
+                        : Colors.transparent;
+            final recent = r.forma.length > 3
+                ? r.forma.sublist(r.forma.length - 3)
+                : r.forma;
             return InkWell(
               onTap: () => _showClubSheet(r),
               child: Container(
-                color: isUser ? AppColors.primaryDark.withOpacity(0.22) : null,
+                decoration: BoxDecoration(
+                  color: isUser ? AppColors.primaryDark.withOpacity(0.24) : null,
+                  border: Border(
+                    left: BorderSide(color: zoneColor, width: 3.5),
+                    bottom: BorderSide(
+                        color: AppColors.line.withOpacity(0.4), width: 0.5),
+                  ),
+                ),
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
                 child: Row(
                   children: [
                     SizedBox(
@@ -169,14 +186,16 @@ class _TableScreenState extends State<TableScreen>
                           style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w800,
-                              color: e.key < 4
-                                  ? AppColors.primary
-                                  : e.key > t.length - 4
-                                      ? AppColors.danger
-                                      : AppColors.muted)),
+                              color: e.key == 0
+                                  ? AppColors.gold
+                                  : e.key < 4
+                                      ? AppColors.primary
+                                      : e.key > t.length - 4
+                                          ? AppColors.danger
+                                          : AppColors.muted)),
                     ),
                     SizedBox(
-                        width: 34,
+                        width: 32,
                         child: Center(
                             child: CrestWidget(
                                 nombre: r.nombre,
@@ -184,13 +203,36 @@ class _TableScreenState extends State<TableScreen>
                                 colorB: r.colorB,
                                 size: 22))),
                     Expanded(
-                      child: Text(r.nombre,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              fontSize: 12.5,
-                              fontWeight:
-                                  isUser ? FontWeight.w800 : FontWeight.w500)),
+                      child: Row(
+                        children: [
+                          Flexible(
+                            child: Text(r.nombre,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: isUser
+                                        ? FontWeight.w800
+                                        : FontWeight.w500)),
+                          ),
+                          if (recent.isNotEmpty) ...[
+                            const SizedBox(width: 6),
+                            ...recent.map((c) => Container(
+                                  width: 6,
+                                  height: 6,
+                                  margin: const EdgeInsets.only(right: 2),
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: c == 'G'
+                                        ? AppColors.primary
+                                        : c == 'E'
+                                            ? AppColors.muted
+                                            : AppColors.danger,
+                                  ),
+                                )),
+                          ],
+                        ],
+                      ),
                     ),
                     SizedBox(
                         width: 26,
@@ -207,7 +249,7 @@ class _TableScreenState extends State<TableScreen>
                         child: Text('${r.pts}',
                             textAlign: TextAlign.center,
                             style: const TextStyle(
-                                fontSize: 13, fontWeight: FontWeight.w800))),
+                                fontSize: 13, fontWeight: FontWeight.w900))),
                   ],
                 ),
               ),
