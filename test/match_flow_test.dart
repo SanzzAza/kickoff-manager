@@ -57,8 +57,8 @@ void main() {
     await t.pump(const Duration(milliseconds: 400));
     await settle(t);
     expect(find.text('Rating pemain'), findsOneWidget);
-    await t.tapAt(const Offset(540, 300)); // tutup sheet
-    await t.pump(const Duration(milliseconds: 400));
+    await t.tapAt(const Offset(180, 60)); // tutup sheet (scrim di atas sheet)
+    await t.pump(const Duration(milliseconds: 500));
 
     await t.tap(find.text('LANJUT'));
     await settle(t);
