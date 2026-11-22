@@ -25,6 +25,7 @@ class _MatchSimScreenState extends State<MatchSimScreen> {
   int homeGoals = 0, awayGoals = 0;
   final visible = <MatchEvent>[];
   Timer? timer;
+  int speedMultiplier = 1;
   int eventIndex = 0;
   bool needWinner = false;
 
@@ -93,7 +94,8 @@ class _MatchSimScreenState extends State<MatchSimScreen> {
 
   void _tick() {
     timer?.cancel();
-    timer = Timer(const Duration(milliseconds: 90), () {
+    final delayMs = (350 / speedMultiplier).round();
+    timer = Timer(Duration(milliseconds: delayMs), () {
       if (!mounted || result == null) return;
       final r = result!;
       setState(() {
@@ -133,6 +135,24 @@ class _MatchSimScreenState extends State<MatchSimScreen> {
       appBar: AppBar(
         title: const Text('Ruang Pertandingan'),
         actions: [
+          TextButton(
+            onPressed: () {
+              setState(() {
+                speedMultiplier = speedMultiplier == 1
+                    ? 2
+                    : speedMultiplier == 2
+                        ? 4
+                        : 1;
+              });
+            },
+            child: Text(
+              '${speedMultiplier}x',
+              style: const TextStyle(
+                fontWeight: FontWeight.w800,
+                color: AppColors.accent,
+              ),
+            ),
+          ),
           IconButton(
               onPressed: _load,
               icon: const Icon(Icons.refresh, size: 20)),
